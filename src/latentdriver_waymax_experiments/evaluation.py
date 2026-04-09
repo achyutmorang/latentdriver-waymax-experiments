@@ -58,7 +58,7 @@ def _parse_batch_dims(batch_dims: Iterable[int]) -> str:
     return f"[{','.join(str(v) for v in values)}]"
 
 
-def _flatten_metrics(metrics_payload: Dict[str, Any]) -> Dict[str, Any]:
+def flatten_metrics_payload(metrics_payload: Dict[str, Any]) -> Dict[str, Any]:
     avg = metrics_payload.get("average", {})
     avg_cls = metrics_payload.get("average_over_class", {})
     return {
@@ -159,7 +159,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     if proc.returncode != 0:
         raise RuntimeError(f"Evaluation failed with code {proc.returncode}. See {bundle['stderr_path']}")
     metrics_payload = json.loads(Path(bundle["metrics_path"]).read_text(encoding="utf-8"))
-    summary = _flatten_metrics(metrics_payload)
+    summary = flatten_metrics_payload(metrics_payload)
     manifest = {
         "run_id": bundle["run_id"],
         "run_dir": str(bundle["run_dir"]),

@@ -30,6 +30,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`docs/latentdriver_reading_note.md`](./docs/latentdriver_reading_note.md): paper summary, metrics contract, and released checkpoint inventory.
 - [`docs/reproduction_plan.md`](./docs/reproduction_plan.md): exact scope for no-training replication and extension.
 - [`docs/inspiration_implementation_plan.md`](./docs/inspiration_implementation_plan.md): phased plan for extending this repo using ideas from Diffusion-Planner, Plan-R1, and RIFT without breaking the evaluation contract.
+- [`docs/waymax_board.md`](./docs/waymax_board.md): NuBoard-inspired viewer design for Waymax run bundles and how it maps onto the repo's artifact schema.
 - [`references/marl_finetuning_seed_references.md`](./references/marl_finetuning_seed_references.md): local paper bundle and curated reading list for MARL fine-tuning, reranking, and lightweight adaptation ideas.
 - [`patches/latentdriver_eval_contract.patch`](./patches/latentdriver_eval_contract.patch): deterministic patch layer applied to the upstream fork to enable bounded smoke runs, machine-readable metrics, and controlled vis output.
 - [`scripts/bootstrap_upstream.py`](./scripts/bootstrap_upstream.py): clone your LatentDriver fork at a pinned commit and apply the local patch layer.
@@ -41,6 +42,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/run_smoke_eval.py`](./scripts/run_smoke_eval.py): quick smoke evaluation on the one-shard subset.
 - [`scripts/run_public_suite.py`](./scripts/run_public_suite.py): evaluate all released checkpoints under one standardized tier and write a suite summary.
 - [`scripts/run_visualization.py`](./scripts/run_visualization.py): run one visualization job and capture generated MP4/PDF artifacts.
+- [`scripts/run_waymax_board.py`](./scripts/run_waymax_board.py): launch a NuBoard-inspired local Bokeh app for browsing Waymax run bundles, metrics, and visualization artifacts.
 - [`notebooks/`](./notebooks): Colab notebooks for assets, preprocessing, public-eval suite, and visualization.
 
 ## Evaluation Contract
@@ -122,6 +124,17 @@ python3 scripts/run_public_suite.py --tier full_non_reactive
 python3 scripts/run_visualization.py --model latentdriver_t2_j3 --tier smoke_reactive --vis video
 ```
 
+### 9. Launch the local Waymax viewer
+```bash
+python3 scripts/run_waymax_board.py --results-root "$PWD/results/runs" --port 5007
+```
+
+This launches a small NuBoard-inspired Bokeh app with three tabs:
+
+- `Overview`: completed runs and suite summaries
+- `Metrics`: run-level metric plots and distributions
+- `Artifacts`: run manifest, log tails, and embedded MP4/PDF/image outputs from `vis/`
+
 ## Colab Path
 
 - assets + checkpoints: [`notebooks/latentdriver_assets_colab.ipynb`](./notebooks/latentdriver_assets_colab.ipynb)
@@ -146,3 +159,11 @@ The local patch at [`patches/latentdriver_eval_contract.patch`](./patches/latent
 - `run.vis_output_dir` for controlled visualization output,
 - `run.seed` for explicit evaluation seeding,
 - CPU-safe checkpoint loading and device fallback.
+
+## WaymaxBoard Boundary
+
+[`scripts/run_waymax_board.py`](./scripts/run_waymax_board.py) is inspired by nuPlan's NuBoard, but it is intentionally narrower:
+
+- it reads this repo's existing `run_manifest.json`, `metrics.json`, `suite_summary.json`, and `vis/` artifacts,
+- it does **not** attempt to replay Waymax simulator state frame-by-frame from a nuPlan-style simulation log,
+- it is designed to browse the evaluation contract already produced by this repo, not replace the underlying Waymax renderer.

@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Reproducible Waymax evaluation of released LatentDriver-family checkpoints with Colab notebooks and visualization."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+  "bokeh>=3.4,<4",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

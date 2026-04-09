@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.evaluation import build_eval_command, run_public_suite, _flatten_metrics
+from latentdriver_waymax_experiments.evaluation import build_eval_command, flatten_metrics_payload, run_public_suite
 
 
 class EvaluationTests(unittest.TestCase):
@@ -57,14 +57,16 @@ class EvaluationTests(unittest.TestCase):
             },
             "per_class": {},
         }
-        flat = _flatten_metrics(payload)
+        flat = flatten_metrics_payload(payload)
         self.assertEqual(flat["number_of_episodes"], 12)
         self.assertEqual(flat["mar_75_95"], 90.14)
         self.assertEqual(flat["ar_75_95"], 94.31)
 
     def test_run_public_suite_dry_run(self) -> None:
-        with patch("latentdriver_waymax_experiments.evaluation.run_eval", side_effect=lambda **kwargs: kwargs):
-            suite = run_public_suite(tier="smoke_reactive", dry_run=True)
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["LATENTDRIVER_RESULTS_ROOT"] = td
+            with patch("latentdriver_waymax_experiments.evaluation.run_eval", side_effect=lambda **kwargs: kwargs):
+                suite = run_public_suite(tier="smoke_reactive", dry_run=True)
         self.assertEqual(suite["tier"], "smoke_reactive")
         self.assertGreaterEqual(len(suite["runs"]), 4)
 

@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .codex-venv/
+*.egg-info/
 .DS_Store
 artifacts/assets/checkpoints/*
 !artifacts/assets/checkpoints/.gitkeep
