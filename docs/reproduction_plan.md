@@ -24,6 +24,7 @@ The immediate target is:
 
 1. **Smoke path working**
    - one-shard smoke subset
+   - support both Drive-local WOMD roots and authenticated WOMD GCS access for smoke staging
    - one checkpoint runs end to end
    - machine-readable metrics JSON exists
    - one visualization artifact exists

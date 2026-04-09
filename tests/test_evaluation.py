@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.evaluation import build_eval_command, run_public_suite, _flatten_metrics
 
@@ -31,6 +34,14 @@ class EvaluationTests(unittest.TestCase):
             (raw_root / "waymo_open_dataset_motion_v_1_1_0" / "uncompressed" / "tf_example" / "validation").mkdir(parents=True)
             cmd = build_eval_command(model="latentdriver_t2_j3", tier="smoke_reactive", seed=7, vis=False)
             self.assertIn("++run.seed=7", " ".join(cmd))
+
+    def test_build_eval_command_supports_gcs_full_validation_root(self) -> None:
+        os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = "gs://waymo_open_dataset_motion_v_1_1_0"
+        cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
+        self.assertIn(
+            "++waymax_conf.path=gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150",
+            " ".join(cmd),
+        )
 
     def test_flatten_metrics_maps_expected_keys(self) -> None:
         payload = {

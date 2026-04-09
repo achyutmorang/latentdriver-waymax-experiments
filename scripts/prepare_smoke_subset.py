@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.config import load_config, resolve_repo_relative
-from latentdriver_waymax_experiments.evaluation import waymo_dataset_root
+from latentdriver_waymax_experiments.womd import validation_shard_uri, waymo_dataset_root
 
 
 def main() -> int:
@@ -18,8 +18,8 @@ def main() -> int:
     parser.add_argument("--shard-index", type=int, default=0)
     args = parser.parse_args()
 
-    raw_root = waymo_dataset_root() / "waymo_open_dataset_motion_v_1_1_0" / "uncompressed" / "tf_example" / "validation"
-    source = raw_root / f"validation_tfexample.tfrecord-{args.shard_index:05d}-of-00150"
+    raw_root = waymo_dataset_root()
+    source = Path(validation_shard_uri(str(raw_root), args.shard_index))
     if not source.exists():
         raise FileNotFoundError(f"Validation shard not found: {source}")
 

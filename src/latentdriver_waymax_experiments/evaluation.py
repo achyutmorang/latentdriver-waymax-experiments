@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List
 from .artifacts import create_run_bundle, write_json
 from .config import load_config, resolve_repo_relative
 from .upstream import ensure_upstream_exists
+from .womd import local_dataset_uri_exists, resolve_dataset_uri, waymo_dataset_root_value
 
 
 @dataclass(frozen=True)
@@ -32,29 +33,20 @@ def checkpoint_path(model: str) -> Path:
     spec = cfg["checkpoints"][model]
     return _checkpoints_root() / spec["filename"]
 
-
-def waymo_dataset_root() -> Path:
-    cfg = load_config()
-    env_name = cfg["assets"]["waymo_dataset_root_env"]
-    value = os.environ.get(env_name, "").strip()
-    if not value:
-        raise EnvironmentError(f"Missing required environment variable: {env_name}")
-    return Path(value).expanduser()
-
-
-def _validation_inputs(dataset_mode: str) -> Dict[str, Path]:
+def _validation_inputs(dataset_mode: str) -> Dict[str, str | Path]:
     cfg = load_config()
     preprocessed_root = resolve_repo_relative(cfg["assets"]["preprocessed_root"])
     smoke_root = resolve_repo_relative(cfg["assets"]["smoke_root"])
     if dataset_mode == "full":
+        dataset_root = waymo_dataset_root_value()
         return {
-            "waymo_path": waymo_dataset_root() / cfg["validation"]["full"]["dataset_pattern"],
+            "waymo_path": resolve_dataset_uri(dataset_root, cfg["validation"]["full"]["dataset_pattern"]),
             "preprocess_path": preprocessed_root / "full" / "val_preprocessed_path",
             "intention_path": preprocessed_root / "full" / "val_intention_label",
         }
     if dataset_mode == "smoke":
         return {
-            "waymo_path": smoke_root / cfg["validation"]["smoke"]["dataset_pattern"],
+            "waymo_path": str(smoke_root / cfg["validation"]["smoke"]["dataset_pattern"]),
             "preprocess_path": preprocessed_root / "smoke" / "val_preprocessed_path",
             "intention_path": preprocessed_root / "smoke" / "val_intention_label",
         }
@@ -119,7 +111,11 @@ def _verify_inputs(model: str, tier: str) -> Dict[str, str]:
     if not ckpt.exists():
         missing["checkpoint"] = str(ckpt)
     for key, path in inputs.items():
-        if not path.exists():
+        if key == "waymo_path":
+            if not local_dataset_uri_exists(str(path)):
+                missing[key] = str(path)
+            continue
+        if not Path(path).exists():
             missing[key] = str(path)
     ensure_upstream_exists()
     return missing
