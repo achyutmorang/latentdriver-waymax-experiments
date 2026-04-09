@@ -8,6 +8,25 @@ from typing import Dict
 from .config import resolve_repo_relative
 
 
+def _migrate_directory_contents(target: Path, source: Path) -> None:
+    entries = [entry for entry in target.iterdir() if entry.name != ".gitkeep"]
+    if not entries:
+        shutil.rmtree(target)
+        return
+    source.mkdir(parents=True, exist_ok=True)
+    for entry in entries:
+        destination = source / entry.name
+        if destination.exists():
+            raise RuntimeError(
+                f"Refusing to overwrite existing Drive-bound content while migrating {entry} -> {destination}"
+            )
+        shutil.move(str(entry), str(destination))
+    gitkeep = target / ".gitkeep"
+    if gitkeep.exists():
+        gitkeep.unlink()
+    shutil.rmtree(target)
+
+
 def _bind_symlink(target: Path, source: Path) -> None:
     source.parent.mkdir(parents=True, exist_ok=True)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -17,10 +36,7 @@ def _bind_symlink(target: Path, source: Path) -> None:
         if target.is_symlink() or target.is_file():
             target.unlink()
         else:
-            entries = [entry for entry in target.iterdir() if entry.name != ".gitkeep"]
-            if entries:
-                raise RuntimeError(f"Refusing to replace non-empty directory with symlink: {target}")
-            shutil.rmtree(target)
+            _migrate_directory_contents(target, source)
     target.symlink_to(source)
 
 

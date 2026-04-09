@@ -27,9 +27,22 @@ class ColabBindingTests(unittest.TestCase):
             source = root / "source"
             target.mkdir()
             (target / "data.txt").write_text("x", encoding="utf-8")
-            source.mkdir()
+            (source / "data.txt").parent.mkdir(parents=True, exist_ok=True)
+            (source / "data.txt").write_text("y", encoding="utf-8")
             with self.assertRaises(RuntimeError):
                 _bind_symlink(target, source)
+
+    def test_bind_symlink_migrates_existing_directory_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target"
+            source = root / "source"
+            target.mkdir()
+            (target / "data.txt").write_text("x", encoding="utf-8")
+            source.mkdir()
+            _bind_symlink(target, source)
+            self.assertTrue(target.is_symlink())
+            self.assertEqual((source / "data.txt").read_text(encoding="utf-8"), "x")
 
 
 if __name__ == "__main__":

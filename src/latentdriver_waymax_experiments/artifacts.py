@@ -8,15 +8,23 @@ from typing import Any, Dict
 from .config import load_config, resolve_repo_relative
 
 
+def _ensure_directory(path: Path) -> Path:
+    if path.is_symlink():
+        path.resolve(strict=False).mkdir(parents=True, exist_ok=True)
+        return path
+    if path.exists():
+        return path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def results_root() -> Path:
     override = Path(__import__("os").environ.get("LATENTDRIVER_RESULTS_ROOT", "")).expanduser()
     if str(override) and str(override) != ".":
-        override.mkdir(parents=True, exist_ok=True)
-        return override
+        return _ensure_directory(override)
     cfg = load_config()
     root = resolve_repo_relative(cfg["assets"]["results_root"])
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    return _ensure_directory(root)
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
