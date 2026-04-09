@@ -1,0 +1,229 @@
+diff --git a/configs/simulate.yaml b/configs/simulate.yaml
+index 050ea3d..cf41b23 100755
+--- a/configs/simulate.yaml
++++ b/configs/simulate.yaml
+@@ -40,5 +40,11 @@ data_conf:
+   FOV: [80, 20] # for width and height, Not used here checkout usage in 'simulator/observation.py'
+   path_to_processed_map_route: ${PRE_PROCESS_VAL_PATH} # path to preprocessed map and route for val or train set
+ 
++run:
++  seed: 0
++  max_batches: null
++  metrics_json_path: null
++  vis_output_dir: null
++
+ defaults:
+-  - method: latentdriver
+\ No newline at end of file
++  - method: latentdriver
+diff --git a/simulate.py b/simulate.py
+index b6e97b1..f0b3711 100755
+--- a/simulate.py
++++ b/simulate.py
+@@ -3,16 +3,19 @@ import hydra
+ from omegaconf import OmegaConf
+ from simulator.engines.ltd_simulator import LTDSimulator
+ from src.policy import build_model
+-from src.utils.utils import update_waymax_config
++from src.utils.utils import set_seed, update_waymax_config
+ import torch
+ @hydra.main(version_base=None, config_path="configs", config_name="simulate")
+ def simulate(cfg):
+     OmegaConf.set_struct(cfg, False)  # Open the struct
++    if 'run' in cfg and cfg.run.seed is not None:
++        set_seed(int(cfg.run.seed))
+     cfg = OmegaConf.merge(cfg, cfg.method)
+     model = build_model(cfg)
+     cfg = update_waymax_config(cfg)
+     if cfg.ckpt_path is not None:
+-        model.load_state_dict(torch.load(cfg.ckpt_path,map_location='cuda:{}'.format(torch.cuda.device_count()-1))['state_dict'])
++        map_location = 'cuda:{}'.format(torch.cuda.device_count()-1) if torch.cuda.is_available() else 'cpu'
++        model.load_state_dict(torch.load(cfg.ckpt_path,map_location=map_location)['state_dict'])
+         print(f'Loaded {cfg.ckpt_path}')
+     else:
+         print('No ckpt provided')
+@@ -23,6 +26,12 @@ def simulate(cfg):
+     )
+     eval_rtg = 0
+     ep_return = [eval_rtg] * runner.env.num_envs
+-    runner.run(ep_return=ep_return, vis =cfg.vis)
++    runner.run(
++        ep_return=ep_return,
++        vis=cfg.vis,
++        max_batches=cfg.run.max_batches,
++        metrics_json_path=cfg.run.metrics_json_path,
++        vis_output_dir=cfg.run.vis_output_dir,
++    )
+ if __name__ == '__main__':
+-    simulate()
+\ No newline at end of file
++    simulate()
+diff --git a/simulator/engines/base_simulator.py b/simulator/engines/base_simulator.py
+index 4a646f5..9d9b6f0 100755
+--- a/simulator/engines/base_simulator.py
++++ b/simulator/engines/base_simulator.py
+@@ -2,10 +2,13 @@ import time
+ from simulator.waymo_env import WaymoEnv
+ import torch
+ import os
++import json
+ from src.utils.viz import plot_seq2image, plot_image
+ import matplotlib.pyplot as plt
+ import tqdm
+ import mediapy
++
++
+ class BaseSimulator():
+     def __init__(self,
+                  model,
+@@ -27,6 +30,8 @@ class BaseSimulator():
+         # put the policy model on the last available gpu
+         if torch.cuda.is_available():
+             self.device = 'cuda:{}'.format(torch.cuda.device_count()-1)
++        else:
++            self.device = 'cpu'
+         self.model.to(self.device)        
+         
+     def run(self):
+@@ -59,7 +64,14 @@ class BaseSimulator():
+                 break
+             
+             
+-    def render(self, vis, model_name):
++    def write_metrics_json(self, metrics_json_path):
++        if not metrics_json_path:
++            return
++        os.makedirs(os.path.dirname(metrics_json_path), exist_ok=True)
++        with open(metrics_json_path, 'w', encoding='utf-8') as handle:
++            json.dump(self.env.metric.get_global_info_payload(), handle, indent=2, sort_keys=True)
++
++    def render(self, vis, model_name, vis_output_dir=None):
+         def save_image():
+             img = plot_seq2image(state=self.env.states[-1],batch_idx=j)
+             img.savefig(name+'.pdf',dpi=300,format='pdf')
+@@ -87,7 +99,10 @@ class BaseSimulator():
+         if vis==False:
+             return
+         assert vis in ['image','video'], "vis must be either 'image' or 'video'"
+-        root_folder = f'vis_results/{model_name}/{vis}/'
++        if vis_output_dir:
++            root_folder = vis_output_dir.rstrip('/') + '/'
++        else:
++            root_folder = f'vis_results/{model_name}/{vis}/'
+         os.makedirs(root_folder, exist_ok=True)
+         os.makedirs(root_folder+'straight_', exist_ok=True)
+         os.makedirs(root_folder+'turning_left', exist_ok=True)
+@@ -114,4 +129,4 @@ class BaseSimulator():
+                 if vis == 'image':
+                     save_image()
+                 elif vis == 'video':
+-                    save_video()
+\ No newline at end of file
++                    save_video()
+diff --git a/simulator/engines/ltd_simulator.py b/simulator/engines/ltd_simulator.py
+index d7f4a0e..028f713 100755
+--- a/simulator/engines/ltd_simulator.py
++++ b/simulator/engines/ltd_simulator.py
+@@ -7,9 +7,12 @@ class LTDSimulator(BaseSimulator):
+         super().__init__(model, config, batch_dims)
+         self.cfg = config
+     
+-    def run(self,ep_return:list, vis):
++    def run(self,ep_return:list, vis, max_batches=None, metrics_json_path=None, vis_output_dir=None):
+         self.idx = 0
+         while True:
++            if max_batches is not None and self.idx >= int(max_batches):
++                print(f'Reached max_batches={max_batches}')
++                break
+             try:
+                 obs, obs_dict = self.env.reset()
+                 obs = obs.reshape(self.env.num_envs,-1,7)
+@@ -82,8 +85,9 @@ class LTDSimulator(BaseSimulator):
+                 self.idx += 1
+                 print('Processed: ', self.idx, 'th batch, Time: ', time.time()-a, 's')
+                 
+-                self.render(vis, self.cfg.method.model_name)
++                self.render(vis, self.cfg.method.model_name, vis_output_dir=vis_output_dir)
+                     
+             except StopIteration:
+                 print("StopIteration")
+-                break
+\ No newline at end of file
++                break
++        self.write_metrics_json(metrics_json_path)
+diff --git a/simulator/metric.py b/simulator/metric.py
+index bb1e438..6ce0946 100755
+--- a/simulator/metric.py
++++ b/simulator/metric.py
+@@ -1,5 +1,7 @@
+-import numpy as np 
++import numpy as np
+ from prettytable import PrettyTable
++
++
+ class MetricBaseValue():
+     def __init__(self,arrival_thres):
+         self.PR = []
+@@ -97,26 +99,48 @@ class Metric():
+         for k,v in info.items():
+             info[k] = v.mean()
+     def get_global_info(self):
+-        global_info = self.global_.get_info()
++        payload = self.get_global_info_payload()
++        global_info = payload['average']
+         table = PrettyTable()
+         table.add_column('metric',[k.split('/')[-1] for k in global_info.keys()])
+-        # calculate average over class here
++        avg_over_class = [payload['average_over_class'][k] for k in global_info.keys()]
++        table.add_column('Average_over_class', avg_over_class)
++        table.add_column('Average',[round(v,4) if isinstance(v, float) else v for k, v in global_info.items()])
++        for k, v in payload['per_class'].items():
++            table.add_column(k, [str(round(vv,4)) if isinstance(vv, float) else str(vv) for kk, vv in v.items()])
++        return table
++
++    @staticmethod
++    def _pythonize(value):
++        if isinstance(value, np.generic):
++            return value.item()
++        if isinstance(value, dict):
++            return {k: Metric._pythonize(v) for k, v in value.items()}
++        if isinstance(value, list):
++            return [Metric._pythonize(v) for v in value]
++        return value
++
++    def _average_over_class_payload(self, metric_keys):
+         avg_over_class = []
+-        for k, v in self.info_by_class_global.items():
+-            avg_over_class.append([round(np.nan_to_num(vv),4) for kk, vv in v.get_info().items()])
++        for _, value in self.info_by_class_global.items():
++            avg_over_class.append([float(np.nan_to_num(vv)) for _, vv in value.get_info().items()])
+         avg_over_class = np.array(avg_over_class).T
+         non_zero_type_num = len(avg_over_class[0].nonzero()[0])
+         avg_over_class_sum = np.sum(avg_over_class, axis=1)
+-        # cal average for metrics
+         divider = np.ones_like(avg_over_class_sum) * non_zero_type_num
+-        # putting num of eposide as the same
+         divider[0] = 1
+-        avg_over_class = np.round(avg_over_class_sum/divider,4)
+-        avg_over_class = avg_over_class.tolist()
+-        avg_over_class[0] = int(avg_over_class[0])   
+-        table.add_column('Average_over_class', avg_over_class) 
+-        table.add_column('Average',[round(v,4) for k, v in global_info.items()])
+-        for k, v in self.info_by_class_global.items():
+-            table.add_column(k, [str(round(vv,4)) for kk, vv in v.get_info().items()])
+-        return table
++        avg_over_class = np.round(avg_over_class_sum / divider, 4).tolist()
++        avg_over_class[0] = int(avg_over_class[0])
++        return {key: self._pythonize(value) for key, value in zip(metric_keys, avg_over_class)}
+ 
++    def get_global_info_payload(self):
++        global_info = self._pythonize(self.global_.get_info())
++        metric_keys = list(global_info.keys())
++        return {
++            'average': global_info,
++            'average_over_class': self._average_over_class_payload(metric_keys),
++            'per_class': {
++                key: self._pythonize(value.get_info())
++                for key, value in self.info_by_class_global.items()
++            },
++        }

@@ -1,0 +1,110 @@
+{
+  "project": {
+    "name": "latentdriver-waymax-experiments"
+  },
+  "upstream": {
+    "fork_repo_url": "https://github.com/achyutmorang/LatentDriver.git",
+    "upstream_repo_url": "https://github.com/Sephirex-X/LatentDriver.git",
+    "repo_dir": "external/LatentDriver",
+    "pinned_commit": "721bd6e1f87373457b743d0e0a9606d4d0727b6f",
+    "patch_path": "patches/latentdriver_eval_contract.patch"
+  },
+  "assets": {
+    "checkpoints_root": "artifacts/assets/checkpoints",
+    "preprocessed_root": "artifacts/assets/preprocessed",
+    "smoke_root": "artifacts/assets/smoke",
+    "lock_root": "artifacts/locks",
+    "results_root": "results/runs",
+    "waymo_dataset_root_env": "LATENTDRIVER_WAYMO_DATASET_ROOT"
+  },
+  "checkpoints": {
+    "latentdriver_t2_j3": {
+      "filename": "lantentdriver_t2_J3.ckpt",
+      "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/lantentdriver_t2_J3.ckpt",
+      "size_bytes": 122413062,
+      "method": "latentdriver",
+      "hydra_overrides": ["++method.num_of_decoder=3"]
+    },
+    "latentdriver_t2_j4": {
+      "filename": "lantentdriver_t2_J4.ckpt",
+      "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/lantentdriver_t2_J4.ckpt",
+      "size_bytes": 127964626,
+      "method": "latentdriver",
+      "hydra_overrides": ["++method.num_of_decoder=4"]
+    },
+    "plant": {
+      "filename": "planT.ckpt",
+      "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/planT.ckpt",
+      "size_bytes": 44758979,
+      "method": "planT",
+      "hydra_overrides": []
+    },
+    "easychauffeur_ppo": {
+      "filename": "easychauffeur_policy_best.pth.tar",
+      "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/easychauffeur_policy_best.pth.tar",
+      "size_bytes": 44928697,
+      "method": "easychauffeur",
+      "hydra_overrides": []
+    },
+    "pretrained_bert": {
+      "filename": "pretrained_bert.pth.tar",
+      "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/pretrained_bert.pth.tar",
+      "size_bytes": 44754839,
+      "method": null,
+      "hydra_overrides": []
+    }
+  },
+  "validation": {
+    "full": {
+      "dataset_pattern": "waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150",
+      "preprocess_batch_dims": [1, 1000]
+    },
+    "smoke": {
+      "dataset_pattern": "validation_smoke.tfrecord@1",
+      "preprocess_batch_dims": [1, 64]
+    }
+  },
+  "evaluation": {
+    "metric_keys": {
+      "mar_75_95": "metric/AR[75:95]",
+      "ar_75_95": "metric/AR[75:95]",
+      "offroad_rate": "metric/offroad_rate",
+      "collision_rate": "metric/collision_rate",
+      "progress_rate": "metric/progress_rate"
+    },
+    "tiers": {
+      "smoke_reactive": {
+        "dataset_mode": "smoke",
+        "npc_policy_type": "idm",
+        "batch_dims": [1, 1],
+        "seed": 0,
+        "max_batches": 1,
+        "vis": false
+      },
+      "smoke_non_reactive": {
+        "dataset_mode": "smoke",
+        "npc_policy_type": "expert",
+        "batch_dims": [1, 1],
+        "seed": 0,
+        "max_batches": 1,
+        "vis": false
+      },
+      "full_reactive": {
+        "dataset_mode": "full",
+        "npc_policy_type": "idm",
+        "batch_dims": [7, 125],
+        "seed": 0,
+        "max_batches": null,
+        "vis": false
+      },
+      "full_non_reactive": {
+        "dataset_mode": "full",
+        "npc_policy_type": "expert",
+        "batch_dims": [7, 125],
+        "seed": 0,
+        "max_batches": null,
+        "vis": false
+      }
+    }
+  }
+}

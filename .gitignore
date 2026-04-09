@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.codex-venv/
+.DS_Store
+artifacts/assets/checkpoints/*
+!artifacts/assets/checkpoints/.gitkeep
+artifacts/assets/preprocessed/*
+!artifacts/assets/preprocessed/.gitkeep
+artifacts/assets/smoke/*
+!artifacts/assets/smoke/.gitkeep
+artifacts/locks/*
+!artifacts/locks/.gitkeep
+results/runs/*
+!results/runs/.gitkeep
+external/LatentDriver/
