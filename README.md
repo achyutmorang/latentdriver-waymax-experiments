@@ -30,6 +30,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`docs/latentdriver_reading_note.md`](./docs/latentdriver_reading_note.md): paper summary, metrics contract, and released checkpoint inventory.
 - [`docs/reproduction_plan.md`](./docs/reproduction_plan.md): exact scope for no-training replication and extension.
 - [`docs/inspiration_implementation_plan.md`](./docs/inspiration_implementation_plan.md): phased plan for extending this repo using ideas from Diffusion-Planner, Plan-R1, and RIFT without breaking the evaluation contract.
+- [`references/marl_finetuning_seed_references.md`](./references/marl_finetuning_seed_references.md): local paper bundle and curated reading list for MARL fine-tuning, reranking, and lightweight adaptation ideas.
 - [`patches/latentdriver_eval_contract.patch`](./patches/latentdriver_eval_contract.patch): deterministic patch layer applied to the upstream fork to enable bounded smoke runs, machine-readable metrics, and controlled vis output.
 - [`scripts/bootstrap_upstream.py`](./scripts/bootstrap_upstream.py): clone your LatentDriver fork at a pinned commit and apply the local patch layer.
 - [`scripts/download_checkpoints.py`](./scripts/download_checkpoints.py): fetch released checkpoints from Hugging Face.
