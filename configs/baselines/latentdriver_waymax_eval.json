@@ -37,7 +37,7 @@
       "url": "https://huggingface.co/Sephirex-x/LatentDriver/resolve/main/checkpoints/planT.ckpt",
       "size_bytes": 44758979,
       "method": "planT",
-      "hydra_overrides": []
+      "hydra_overrides": ["++method.control_type=waypoint"]
     },
     "easychauffeur_ppo": {
       "filename": "easychauffeur_policy_best.pth.tar",

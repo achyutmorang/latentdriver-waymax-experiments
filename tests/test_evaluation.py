@@ -28,6 +28,14 @@ class EvaluationTests(unittest.TestCase):
             self.assertIn("++run.max_batches=1", joined)
             self.assertIn("++run.seed=0", joined)
 
+    def test_build_eval_command_sets_plant_control_type_to_waypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            raw_root = Path(td)
+            os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(raw_root)
+            (raw_root / "waymo_open_dataset_motion_v_1_1_0" / "uncompressed" / "tf_example" / "validation").mkdir(parents=True)
+            cmd = build_eval_command(model="plant", tier="smoke_reactive", vis=False)
+            self.assertIn("++method.control_type=waypoint", " ".join(cmd))
+
     def test_build_eval_command_honors_seed_override(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             raw_root = Path(td)
