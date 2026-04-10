@@ -11,7 +11,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from scripts.preprocess_validation_only import build_preprocess_command, main as preprocess_main
+from scripts.preprocess_validation_only import (
+    build_preprocess_command,
+    clear_preprocess_outputs,
+    main as preprocess_main,
+    preprocess_cache_status,
+)
 
 
 class PreprocessValidationOnlyTests(unittest.TestCase):
@@ -63,6 +68,83 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
                 "try:\n    import pytorch_lightning as pl",
                 (upstream_dir / "src" / "utils" / "utils.py").read_text(encoding="utf-8"),
             )
+
+    def test_preprocess_cache_status_marks_complete_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(Path(td) / "raw")
+            smoke_root = REPO_ROOT / "artifacts" / "assets" / "preprocessed" / "smoke"
+            map_dir = smoke_root / "val_preprocessed_path" / "map"
+            route_dir = smoke_root / "val_preprocessed_path" / "route"
+            intention_dir = smoke_root / "val_intention_label"
+            try:
+                map_dir.mkdir(parents=True, exist_ok=True)
+                route_dir.mkdir(parents=True, exist_ok=True)
+                intention_dir.mkdir(parents=True, exist_ok=True)
+                (map_dir / "a.npy").write_text("x", encoding="utf-8")
+                (route_dir / "a.npy").write_text("x", encoding="utf-8")
+                (intention_dir / "a.txt").write_text("x", encoding="utf-8")
+                status = preprocess_cache_status("smoke")
+                self.assertTrue(status["complete"])
+                self.assertFalse(status["partial"])
+            finally:
+                clear_preprocess_outputs("smoke")
+
+    def test_main_reuses_existing_complete_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            raw_root = Path(td) / "raw"
+            os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(raw_root)
+            upstream_dir = Path(td) / "LatentDriver"
+            (upstream_dir / "src" / "utils").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "policy" / "latentdriver").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "policy" / "baseline").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "utils" / "utils.py").write_text("import pytorch_lightning as pl\n", encoding="utf-8")
+            (upstream_dir / "src" / "policy" / "latentdriver" / "lantentdriver_model.py").write_text(
+                "import torch.nn as nn\nimport pytorch_lightning as pl\n",
+                encoding="utf-8",
+            )
+            (upstream_dir / "src" / "policy" / "baseline" / "bc_baseline.py").write_text(
+                "from torch import nn\nimport pytorch_lightning as pl\n",
+                encoding="utf-8",
+            )
+            smoke_root = REPO_ROOT / "artifacts" / "assets" / "preprocessed" / "smoke"
+            map_dir = smoke_root / "val_preprocessed_path" / "map"
+            route_dir = smoke_root / "val_preprocessed_path" / "route"
+            intention_dir = smoke_root / "val_intention_label"
+            try:
+                map_dir.mkdir(parents=True, exist_ok=True)
+                route_dir.mkdir(parents=True, exist_ok=True)
+                intention_dir.mkdir(parents=True, exist_ok=True)
+                (map_dir / "a.npy").write_text("x", encoding="utf-8")
+                (route_dir / "a.npy").write_text("x", encoding="utf-8")
+                (intention_dir / "a.txt").write_text("x", encoding="utf-8")
+                argv = ["preprocess_validation_only.py", "--mode", "smoke"]
+                with patch.object(sys, "argv", argv):
+                    with patch("scripts.preprocess_validation_only.ensure_upstream_exists", return_value=upstream_dir):
+                        with patch("scripts.preprocess_validation_only.subprocess.run") as run_mock:
+                            rc = preprocess_main()
+                self.assertEqual(rc, 0)
+                run_mock.assert_not_called()
+            finally:
+                clear_preprocess_outputs("smoke")
+
+    def test_clear_preprocess_outputs_removes_generated_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(Path(td) / "raw")
+            smoke_root = REPO_ROOT / "artifacts" / "assets" / "preprocessed" / "smoke"
+            map_dir = smoke_root / "val_preprocessed_path" / "map"
+            route_dir = smoke_root / "val_preprocessed_path" / "route"
+            intention_dir = smoke_root / "val_intention_label"
+            map_dir.mkdir(parents=True, exist_ok=True)
+            route_dir.mkdir(parents=True, exist_ok=True)
+            intention_dir.mkdir(parents=True, exist_ok=True)
+            (map_dir / "a.npy").write_text("x", encoding="utf-8")
+            (route_dir / "a.npy").write_text("x", encoding="utf-8")
+            (intention_dir / "a.txt").write_text("x", encoding="utf-8")
+            payload = clear_preprocess_outputs("smoke")
+            self.assertFalse(map_dir.exists())
+            self.assertFalse(route_dir.exists())
+            self.assertFalse(intention_dir.exists())
+            self.assertEqual(len(payload["removed"]), 3)
 
 
 if __name__ == "__main__":
