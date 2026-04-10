@@ -171,6 +171,14 @@ PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIV
 """
 
 
+JAX_TREE_MAP_COMPAT_FILES = (
+    Path("simulator") / "utils.py",
+    Path("waymax") / "agents" / "expert.py",
+    Path("waymax") / "agents" / "waypoint_following_agent.py",
+    Path("waymax") / "visualization" / "viz.py",
+)
+
+
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
     return {
@@ -286,3 +294,20 @@ def ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir: Path) ->
             PREPROCESS_POOL_NEW_BLOCK,
         ),
     }
+
+def ensure_jax_tree_map_compat_source_patch(upstream_dir: Path) -> Dict[str, str]:
+    statuses: Dict[str, str] = {}
+    for relative_path in JAX_TREE_MAP_COMPAT_FILES:
+        path = upstream_dir / relative_path
+        key = str(relative_path)
+        if not path.exists():
+            statuses[key] = "missing"
+            continue
+        source = path.read_text(encoding="utf-8")
+        if "jax.tree_map(" not in source:
+            statuses[key] = "already_patched"
+            continue
+        path.write_text(source.replace("jax.tree_map(", "jax.tree_util.tree_map("), encoding="utf-8")
+        statuses[key] = "patched"
+    return statuses
+

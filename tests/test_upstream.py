@@ -10,12 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.upstream import (
     CRDP_FALLBACK_INIT,
+    JAX_TREE_MAP_COMPAT_FILES,
     MODEL_LIGHTNING_NEW_IMPORT,
     PREPROCESS_POOL_NEW_BLOCK,
     PREPROCESS_SCENARIO_NEW_BLOCK,
     PYTHON312_SITE_CUSTOMIZE_BLOCK,
     UTILS_LIGHTNING_NEW_IMPORT,
     ensure_crdp_compat_source_patch,
+    ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
     ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
@@ -95,6 +97,23 @@ class UpstreamCompatTests(unittest.TestCase):
             rewritten = preprocess_path.read_text(encoding="utf-8")
             self.assertIn(PREPROCESS_SCENARIO_NEW_BLOCK, rewritten)
             self.assertIn(PREPROCESS_POOL_NEW_BLOCK, rewritten)
+
+    def test_ensure_jax_tree_map_compat_source_patch_rewrites_runtime_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            upstream_dir = Path(td)
+            for relative_path in JAX_TREE_MAP_COMPAT_FILES:
+                path = upstream_dir / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("import jax\nvalue = jax.tree_map(lambda x: x, tree)\n", encoding="utf-8")
+
+            result = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+
+            for relative_path in JAX_TREE_MAP_COMPAT_FILES:
+                key = str(relative_path)
+                self.assertEqual(result[key], "patched")
+                rewritten = (upstream_dir / relative_path).read_text(encoding="utf-8")
+                self.assertIn("jax.tree_util.tree_map(", rewritten)
+                self.assertNotIn("jax.tree_map(", rewritten)
 
     def test_crdp_fallback_module_downsamples_collinear_points(self) -> None:
         with tempfile.TemporaryDirectory() as td:

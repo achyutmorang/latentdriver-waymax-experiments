@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.upstream import (
     ensure_crdp_compat_source_patch,
+    ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
     ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
@@ -235,6 +236,8 @@ def main() -> int:
     print(f"[latentdriver-setup] crdp compat patch: {crdp_compat}")
     preprocess_multiprocessing_compat = ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir)
     print(f"[latentdriver-setup] preprocess multiprocessing compat patch: {preprocess_multiprocessing_compat}")
+    jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+    print(f"[latentdriver-setup] jax tree_map compat patch: {jax_tree_map_compat}")
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])
