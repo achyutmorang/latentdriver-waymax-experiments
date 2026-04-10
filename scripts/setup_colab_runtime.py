@@ -18,7 +18,7 @@ from latentdriver_waymax_experiments.upstream import (
 
 
 WAYMAX_GIT_SPEC = "git+https://github.com/waymo-research/waymax.git@main#egg=waymo-waymax"
-JAX_CUDA_INDEX = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+JAX_GPU_PIN = "jax[cuda12]==0.6.0"
 GPT2_OLD_IMPORT_BLOCK = """from transformers.modeling_utils import (
     Conv1D,
     PreTrainedModel,
@@ -109,7 +109,7 @@ def runtime_install_commands() -> list[list[str]]:
     return [
         [sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
         _pip_install(WAYMAX_GIT_SPEC),
-        _pip_install("jax[cuda12]>=0.7.0,<0.8", extra_args=["-f", JAX_CUDA_INDEX]),
+        _pip_install(JAX_GPU_PIN),
         _pip_install(
             "mediapy",
             "seaborn",
@@ -130,6 +130,67 @@ def runtime_install_commands() -> list[list[str]]:
             "Pillow>=9.4.0",
         ),
     ]
+
+
+def verify_jax_gpu_backend() -> dict[str, object]:
+    probe = """import json, subprocess
+report = {}
+try:
+    import jax
+    import jaxlib
+    devices = jax.devices()
+    report["jax"] = jax.__version__
+    report["jaxlib"] = jaxlib.__version__
+    report["default_backend"] = jax.default_backend()
+    report["devices"] = [
+        {
+            "repr": str(device),
+            "platform": getattr(device, "platform", None),
+            "device_kind": getattr(device, "device_kind", None),
+        }
+        for device in devices
+    ]
+except Exception as exc:
+    report["probe_error"] = repr(exc)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    raise
+
+try:
+    completed = subprocess.run(["nvidia-smi", "-L"], check=False, capture_output=True, text=True)
+    report["nvidia_smi"] = {
+        "returncode": completed.returncode,
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
+    }
+except FileNotFoundError:
+    completed = None
+    report["nvidia_smi"] = {"missing": True}
+
+gpu_visible = bool(completed and completed.returncode == 0 and "GPU " in completed.stdout)
+jax_has_gpu = report.get("default_backend") in {"gpu", "cuda"} or any(
+    device.get("platform") in {"gpu", "cuda"} for device in report.get("devices", [])
+)
+report["gpu_visible"] = gpu_visible
+report["jax_has_gpu"] = jax_has_gpu
+print(json.dumps(report, indent=2, sort_keys=True))
+if gpu_visible and not jax_has_gpu:
+    raise SystemExit(1)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if completed.stdout:
+        print("[latentdriver-setup] jax backend probe:")
+        print(completed.stdout.strip())
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "JAX is not using the visible NVIDIA GPU. "
+            "The Colab runtime likely installed an incompatible CUDA JAX stack."
+        )
+    return {"stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
 
 
 def patch_gpt2_model(upstream_dir: Path) -> str:
@@ -175,6 +236,7 @@ def main() -> int:
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])
 
+    verify_jax_gpu_backend()
     print("[latentdriver-setup] runtime ready")
     return 0
 

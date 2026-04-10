@@ -12,10 +12,12 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from scripts.setup_colab_runtime import (
     GPT2_NEW_IMPORT_BLOCK,
     GPT2_OLD_IMPORT_BLOCK,
+    JAX_GPU_PIN,
     SORT_VERT_FALLBACK_CODE,
     patch_gpt2_model,
     patch_sort_vertices,
     runtime_install_commands,
+    verify_jax_gpu_backend,
 )
 
 
@@ -24,7 +26,7 @@ class SetupColabRuntimeTests(unittest.TestCase):
         commands = runtime_install_commands()
         joined = [" ".join(cmd) for cmd in commands]
         self.assertTrue(any("waymo-research/waymax.git@main#egg=waymo-waymax" in cmd for cmd in joined))
-        self.assertTrue(any("jax[cuda12]>=0.7.0,<0.8" in cmd for cmd in joined))
+        self.assertTrue(any(JAX_GPU_PIN in cmd for cmd in joined))
         self.assertFalse(any("tensorflow==2.15.0" in cmd for cmd in joined))
         self.assertFalse(any("setup.py install" in cmd for cmd in joined))
         self.assertFalse(any("pytorch-lightning" in cmd for cmd in joined))
@@ -53,6 +55,20 @@ class SetupColabRuntimeTests(unittest.TestCase):
             result = patch_sort_vertices(root)
             self.assertEqual(result, "patched")
             self.assertEqual(file.read_text(encoding="utf-8"), SORT_VERT_FALLBACK_CODE)
+
+    def test_verify_jax_gpu_backend_raises_when_gpu_visible_but_jax_is_cpu(self) -> None:
+        import subprocess
+        from unittest.mock import patch
+
+        failing_probe = subprocess.CompletedProcess(
+            args=["python3", "-c", "probe"],
+            returncode=1,
+            stdout='{"gpu_visible": true, "jax_has_gpu": false}',
+            stderr="",
+        )
+        with patch("scripts.setup_colab_runtime.subprocess.run", return_value=failing_probe):
+            with self.assertRaisesRegex(RuntimeError, "JAX is not using the visible NVIDIA GPU"):
+                verify_jax_gpu_backend()
 
 
 if __name__ == "__main__":
