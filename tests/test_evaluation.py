@@ -40,6 +40,8 @@ class EvaluationTests(unittest.TestCase):
         patch_path = Path(__file__).resolve().parents[1] / "patches" / "latentdriver_eval_contract.patch"
         patch_text = patch_path.read_text(encoding="utf-8")
         self.assertIn("safe_intention = intention.replace('/', '_').replace(' ', '_') or 'unknown'", patch_text)
+        self.assertIn("for state in tqdm.tqdm(self.env.states):", patch_text)
+        self.assertIn("mediapy.write_video(name+'.mp4', imgs, fps=10)", patch_text)
 
 
     def test_build_eval_command_honors_seed_override(self) -> None:
@@ -114,6 +116,80 @@ class EvaluationTests(unittest.TestCase):
                     run_eval(model="latentdriver_t2_j3", tier="smoke_reactive", seed=0, vis=False, dry_run=False)
             self.assertIn("stderr_path:", str(ctx.exception))
             self.assertIn("stdout tail:", str(ctx.exception))
+
+
+    def test_run_eval_visualization_requires_media_artifact(self) -> None:
+        from latentdriver_waymax_experiments.evaluation import run_eval
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = {
+                "run_id": "run-1",
+                "run_dir": root,
+                "metrics_path": root / "metrics.json",
+                "stdout_path": root / "stdout.log",
+                "stderr_path": root / "stderr.log",
+                "config_snapshot": root / "config_snapshot.json",
+                "run_manifest": root / "run_manifest.json",
+                "vis_dir": root / "vis",
+            }
+            bundle["vis_dir"].mkdir()
+
+            def _completed_process(*args, **kwargs):
+                bundle["metrics_path"].write_text(json.dumps({"average": {}, "average_over_class": {}, "per_class": {}}), encoding="utf-8")
+                return subprocess.CompletedProcess(["python3", "simulate.py"], 0, stdout="ok", stderr="")
+
+            with patch("latentdriver_waymax_experiments.evaluation.ensure_upstream_exists", return_value=root), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_python312_compat_sitecustomize", return_value=root / "sitecustomize.py"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
+                 patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \
+                 patch("latentdriver_waymax_experiments.evaluation.subprocess.run", side_effect=_completed_process):
+                with self.assertRaisesRegex(RuntimeError, "without producing media artifacts") as ctx:
+                    run_eval(model="latentdriver_t2_j3", tier="smoke_reactive", seed=0, vis="video", dry_run=False)
+            self.assertIn("vis_dir:", str(ctx.exception))
+
+
+    def test_run_eval_visualization_returns_media_manifest(self) -> None:
+        from latentdriver_waymax_experiments.evaluation import run_eval
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = {
+                "run_id": "run-1",
+                "run_dir": root,
+                "metrics_path": root / "metrics.json",
+                "stdout_path": root / "stdout.log",
+                "stderr_path": root / "stderr.log",
+                "config_snapshot": root / "config_snapshot.json",
+                "run_manifest": root / "run_manifest.json",
+                "vis_dir": root / "vis",
+            }
+            bundle["vis_dir"].mkdir()
+
+            def _completed_process(*args, **kwargs):
+                bundle["metrics_path"].write_text(json.dumps({"average": {}, "average_over_class": {}, "per_class": {}}), encoding="utf-8")
+                media_path = bundle["vis_dir"] / "straight_" / "demo.mp4"
+                media_path.parent.mkdir(parents=True, exist_ok=True)
+                media_path.write_bytes(b"fake")
+                return subprocess.CompletedProcess(["python3", "simulate.py"], 0, stdout="ok", stderr="")
+
+            with patch("latentdriver_waymax_experiments.evaluation.ensure_upstream_exists", return_value=root), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_python312_compat_sitecustomize", return_value=root / "sitecustomize.py"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
+                 patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \
+                 patch("latentdriver_waymax_experiments.evaluation.subprocess.run", side_effect=_completed_process):
+                payload = run_eval(model="latentdriver_t2_j3", tier="smoke_reactive", seed=0, vis="video", dry_run=False)
+
+            self.assertEqual(payload["media_file_count"], 1)
+            self.assertTrue(payload["media_files"][0].endswith("demo.mp4"))
 
 
 

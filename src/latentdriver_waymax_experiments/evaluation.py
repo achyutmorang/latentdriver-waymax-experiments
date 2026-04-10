@@ -75,6 +75,14 @@ def _tail_text(text: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
     return tail
 
 
+def _media_paths(vis_dir: Path) -> List[Path]:
+    return sorted(path for path in vis_dir.rglob('*') if path.is_file() and path.suffix.lower() in {'.mp4', '.pdf'})
+
+
+def _vis_requested(vis: str | bool) -> bool:
+    return vis not in (False, None, '', 'False', 'false', '0')
+
+
 def flatten_metrics_payload(metrics_payload: Dict[str, Any]) -> Dict[str, Any]:
     avg = metrics_payload.get("average", {})
     avg_cls = metrics_payload.get("average_over_class", {})
@@ -212,7 +220,27 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
             f"stderr tail:\n{stderr_tail}\n\n"
             f"stdout tail:\n{stdout_tail}"
         )
-    metrics_payload = json.loads(Path(bundle["metrics_path"]).read_text(encoding="utf-8"))
+    metrics_path = Path(bundle["metrics_path"])
+    if not metrics_path.exists():
+        raise RuntimeError(
+            f"Evaluation finished without metrics output.\n"
+            f"metrics_path: {metrics_path}\n"
+            f"stderr_path: {bundle['stderr_path']}\n"
+            f"stdout_path: {bundle['stdout_path']}\n\n"
+            f"stderr tail:\n{_tail_text(proc.stderr)}\n\n"
+            f"stdout tail:\n{_tail_text(proc.stdout)}"
+        )
+    media_files = _media_paths(Path(bundle["vis_dir"]))
+    if _vis_requested(vis) and not media_files:
+        raise RuntimeError(
+            f"Visualization run finished without producing media artifacts.\n"
+            f"vis_dir: {bundle['vis_dir']}\n"
+            f"stderr_path: {bundle['stderr_path']}\n"
+            f"stdout_path: {bundle['stdout_path']}\n\n"
+            f"stderr tail:\n{_tail_text(proc.stderr)}\n\n"
+            f"stdout tail:\n{_tail_text(proc.stdout)}"
+        )
+    metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
     summary = flatten_metrics_payload(metrics_payload)
     manifest = {
         "run_id": bundle["run_id"],
@@ -228,6 +256,8 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
         "stdout_path": str(bundle["stdout_path"]),
         "stderr_path": str(bundle["stderr_path"]),
         "vis_dir": str(bundle["vis_dir"]),
+        "media_files": [str(path) for path in media_files],
+        "media_file_count": len(media_files),
     }
     write_json(bundle["run_manifest"], manifest)
     return {**manifest, "summary": summary}

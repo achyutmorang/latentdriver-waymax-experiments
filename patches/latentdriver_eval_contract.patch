@@ -59,7 +59,7 @@ index b6e97b1..f0b3711 100755
 \ No newline at end of file
 +    simulate()
 diff --git a/simulator/engines/base_simulator.py b/simulator/engines/base_simulator.py
-index 4a646f5..6dde270 100755
+index 4a646f5..b481294 100755
 --- a/simulator/engines/base_simulator.py
 +++ b/simulator/engines/base_simulator.py
 @@ -2,10 +2,13 @@ import time
@@ -101,7 +101,17 @@ index 4a646f5..6dde270 100755
          def save_image():
              img = plot_seq2image(state=self.env.states[-1],batch_idx=j)
              img.savefig(name+'.pdf',dpi=300,format='pdf')
-@@ -87,31 +99,22 @@ class BaseSimulator():
+@@ -79,39 +91,30 @@ class BaseSimulator():
+                 center_agent_idx=-1,
+                 verbose=False
+             )
+-            for state in tqdm(self.env.states):
++            for state in tqdm.tqdm(self.env.states):
+                 imgs.append(plot_image(state = state,batch_idx=j,viz_config=vis_config))
+-                mediapy.write_video(name+'.mp4',imgs , fps=10)
++            mediapy.write_video(name+'.mp4', imgs, fps=10)
+             print('Saved Video: ', name)
+             
          if vis==False:
              return
          assert vis in ['image','video'], "vis must be either 'image' or 'video'"
