@@ -63,6 +63,17 @@ def _parse_batch_dims(batch_dims: Iterable[int]) -> str:
     return f"[{','.join(str(v) for v in values)}]"
 
 
+def _tail_text(text: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "<empty>"
+    lines = stripped.splitlines()[-max_lines:]
+    tail = "\n".join(lines)
+    if len(tail) > max_chars:
+        tail = tail[-max_chars:]
+    return tail
+
+
 def flatten_metrics_payload(metrics_payload: Dict[str, Any]) -> Dict[str, Any]:
     avg = metrics_payload.get("average", {})
     avg_cls = metrics_payload.get("average_over_class", {})
@@ -189,7 +200,15 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     bundle["stdout_path"].write_text(proc.stdout, encoding="utf-8")
     bundle["stderr_path"].write_text(proc.stderr, encoding="utf-8")
     if proc.returncode != 0:
-        raise RuntimeError(f"Evaluation failed with code {proc.returncode}. See {bundle['stderr_path']}")
+        stderr_tail = _tail_text(proc.stderr)
+        stdout_tail = _tail_text(proc.stdout)
+        raise RuntimeError(
+            f"Evaluation failed with code {proc.returncode}.\n"
+            f"stderr_path: {bundle['stderr_path']}\n"
+            f"stdout_path: {bundle['stdout_path']}\n\n"
+            f"stderr tail:\n{stderr_tail}\n\n"
+            f"stdout tail:\n{stdout_tail}"
+        )
     metrics_payload = json.loads(Path(bundle["metrics_path"]).read_text(encoding="utf-8"))
     summary = flatten_metrics_payload(metrics_payload)
     manifest = {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import os
 import sys
 import tempfile
@@ -69,6 +70,36 @@ class EvaluationTests(unittest.TestCase):
                 suite = run_public_suite(tier="smoke_reactive", dry_run=True)
         self.assertEqual(suite["tier"], "smoke_reactive")
         self.assertGreaterEqual(len(suite["runs"]), 4)
+
+    def test_run_eval_failure_includes_stderr_tail(self) -> None:
+        from latentdriver_waymax_experiments.evaluation import run_eval
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = {
+                "run_id": "run-1",
+                "run_dir": root,
+                "metrics_path": root / "metrics.json",
+                "stdout_path": root / "stdout.log",
+                "stderr_path": root / "stderr.log",
+                "config_snapshot": root / "config_snapshot.json",
+                "run_manifest": root / "run_manifest.json",
+                "vis_dir": root / "vis",
+            }
+            bundle["vis_dir"].mkdir()
+            with patch("latentdriver_waymax_experiments.evaluation.ensure_upstream_exists", return_value=root), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_python312_compat_sitecustomize", return_value=root / "sitecustomize.py"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
+                 patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
+                 patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \
+                 patch("latentdriver_waymax_experiments.evaluation.subprocess.run", return_value=subprocess.CompletedProcess(["python3", "simulate.py"], 1, stdout="stdout line\nmore stdout", stderr="Traceback line\nroot cause boom")):
+                with self.assertRaisesRegex(RuntimeError, "root cause boom") as ctx:
+                    run_eval(model="latentdriver_t2_j3", tier="smoke_reactive", seed=0, vis=False, dry_run=False)
+            self.assertIn("stderr_path:", str(ctx.exception))
+            self.assertIn("stdout tail:", str(ctx.exception))
+
 
 
 if __name__ == "__main__":
