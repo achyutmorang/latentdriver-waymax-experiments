@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+if importlib.util.find_spec("bokeh") is None:
+    raise unittest.SkipTest("bokeh is not installed in the current test environment")
 
 from bokeh.document import Document
 

@@ -3,18 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.womd import WOMD_VERSION, is_gcs_uri, validation_shard_uri
-
-
-def _run(cmd: list[str]) -> None:
-    print("[stage-womd] $", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+from latentdriver_waymax_experiments.womd import WOMD_VERSION, copy_gcs_to_local, is_gcs_uri, validation_shard_uri
 
 
 def main() -> int:
@@ -48,8 +42,12 @@ def main() -> int:
 
     if target.exists() and args.force:
         target.unlink()
+    transfer = None
     if not target.exists():
-        _run(["gsutil", "cp", source, str(target)])
+        transfer = copy_gcs_to_local(source, target)
+        print("[stage-womd] $", " ".join(transfer["command"]))
+
+    payload["transfer"] = transfer
 
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
