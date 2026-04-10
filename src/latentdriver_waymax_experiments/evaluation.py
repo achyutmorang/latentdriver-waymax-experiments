@@ -126,6 +126,26 @@ def _verify_inputs(model: str, tier: str) -> Dict[str, str]:
     return missing
 
 
+def _missing_inputs_message(*, model: str, tier: str, missing: Dict[str, str]) -> str:
+    lines = [f"Missing required inputs for model={model} tier={tier}:"]
+    for key, value in missing.items():
+        lines.append(f"- {key}: {value}")
+    if "checkpoint" in missing:
+        lines.append("")
+        lines.append("Checkpoint assets are missing.")
+        lines.append(
+            "Run `python3 scripts/download_checkpoints.py --evaluation-only` "
+            "or execute the assets notebook `notebooks/latentdriver_assets_colab.ipynb` first."
+        )
+    if any(key in missing for key in ("preprocess_path", "intention_path", "waymo_path")):
+        lines.append("")
+        lines.append(
+            "Dataset or preprocess artifacts are missing. "
+            "Run `notebooks/latentdriver_preprocess_val_colab.ipynb` first."
+        )
+    return "\n".join(lines)
+
+
 def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool = False, dry_run: bool = False) -> Dict[str, Any]:
     upstream_dir = ensure_upstream_exists()
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
@@ -154,9 +174,10 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
             "seed": resolved_seed,
             "command": cmd,
             "missing_inputs": missing,
+            "ready": not bool(missing),
         }
     if missing:
-        raise FileNotFoundError(f"Missing required inputs: {missing}")
+        raise FileNotFoundError(_missing_inputs_message(model=model, tier=tier, missing=missing))
     proc = subprocess.run(
         cmd,
         cwd=upstream_dir,
