@@ -91,6 +91,11 @@ def main() -> int:
     parser.add_argument("--mode", choices=["smoke", "full"], default="smoke")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="Delete existing generated preprocess outputs and rebuild them.")
+    parser.add_argument(
+        "--auto-force-partial",
+        action="store_true",
+        help="Automatically clear and rebuild partial preprocess outputs instead of failing.",
+    )
     args = parser.parse_args()
 
     upstream_dir = ensure_upstream_exists()
@@ -113,6 +118,7 @@ def main() -> int:
         "preprocess_multiprocessing_compat": preprocess_multiprocessing_compat,
         "cache_status": cache_status,
         "force": args.force,
+        "auto_force_partial": args.auto_force_partial,
     }
     if args.dry_run:
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -122,11 +128,15 @@ def main() -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     if cache_status["partial"] and not args.force:
-        raise SystemExit(
-            "Existing preprocess outputs are partial. "
-            "Delete them or rerun with --force to rebuild the cache."
-        )
-    if args.force and cache_status["any_present"]:
+        if args.auto_force_partial:
+            payload["cache_action"] = "auto_cleared_partial_outputs"
+            payload["cache_clear"] = clear_preprocess_outputs(args.mode)
+        else:
+            raise SystemExit(
+                "Existing preprocess outputs are partial. "
+                "Delete them or rerun with --force to rebuild the cache."
+            )
+    elif args.force and cache_status["any_present"]:
         payload["cache_clear"] = clear_preprocess_outputs(args.mode)
     env = dict(os.environ)
     existing_pythonpath = env.get("PYTHONPATH")
