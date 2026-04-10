@@ -16,6 +16,7 @@ from latentdriver_waymax_experiments.evaluation import _validation_inputs
 from latentdriver_waymax_experiments.upstream import (
     ensure_crdp_compat_source_patch,
     ensure_lightning_compat_source_patches,
+    ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
     ensure_upstream_exists,
 )
@@ -96,6 +97,7 @@ def main() -> int:
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
+    preprocess_multiprocessing_compat = ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir)
     inputs = _validation_inputs(args.mode)
     cmd = build_preprocess_command(mode=args.mode)
     cache_status = preprocess_cache_status(args.mode)
@@ -108,6 +110,7 @@ def main() -> int:
         "compat_sitecustomize": str(compat_sitecustomize),
         "lightning_compat": lightning_compat,
         "crdp_compat": crdp_compat,
+        "preprocess_multiprocessing_compat": preprocess_multiprocessing_compat,
         "cache_status": cache_status,
         "force": args.force,
     }
@@ -128,6 +131,7 @@ def main() -> int:
     env = dict(os.environ)
     existing_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = str(upstream_dir) if not existing_pythonpath else f"{upstream_dir}{os.pathsep}{existing_pythonpath}"
+    env.setdefault("LATENTDRIVER_PREPROCESS_START_METHOD", "spawn")
     proc = subprocess.run(cmd, cwd=upstream_dir, check=False, text=True, env=env)
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)

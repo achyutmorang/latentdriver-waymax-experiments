@@ -56,12 +56,17 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
 
             with patch.object(sys, "argv", argv):
                 with patch("scripts.preprocess_validation_only.ensure_upstream_exists", return_value=upstream_dir):
-                    with patch("scripts.preprocess_validation_only.subprocess.run", side_effect=fake_run):
-                        rc = preprocess_main()
+                    with patch(
+                        "scripts.preprocess_validation_only.ensure_preprocess_multiprocessing_compat_source_patch",
+                        return_value={"host_materialization": "patched", "safe_start_method": "patched"},
+                    ):
+                        with patch("scripts.preprocess_validation_only.subprocess.run", side_effect=fake_run):
+                            rc = preprocess_main()
 
             self.assertEqual(rc, 0)
             self.assertEqual(captured["cwd"], upstream_dir)
             self.assertTrue(str(upstream_dir) in str(captured["env"]["PYTHONPATH"]))
+            self.assertEqual(captured["env"]["LATENTDRIVER_PREPROCESS_START_METHOD"], "spawn")
             self.assertTrue((upstream_dir / "sitecustomize.py").exists())
             self.assertTrue((upstream_dir / "src" / "ops" / "crdp" / "__init__.py").exists())
             self.assertIn(
@@ -120,8 +125,12 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
                 argv = ["preprocess_validation_only.py", "--mode", "smoke"]
                 with patch.object(sys, "argv", argv):
                     with patch("scripts.preprocess_validation_only.ensure_upstream_exists", return_value=upstream_dir):
-                        with patch("scripts.preprocess_validation_only.subprocess.run") as run_mock:
-                            rc = preprocess_main()
+                        with patch(
+                            "scripts.preprocess_validation_only.ensure_preprocess_multiprocessing_compat_source_patch",
+                            return_value={"host_materialization": "patched", "safe_start_method": "patched"},
+                        ):
+                            with patch("scripts.preprocess_validation_only.subprocess.run") as run_mock:
+                                rc = preprocess_main()
                 self.assertEqual(rc, 0)
                 run_mock.assert_not_called()
             finally:

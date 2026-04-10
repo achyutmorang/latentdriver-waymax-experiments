@@ -11,10 +11,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from latentdriver_waymax_experiments.upstream import (
     CRDP_FALLBACK_INIT,
     MODEL_LIGHTNING_NEW_IMPORT,
+    PREPROCESS_POOL_NEW_BLOCK,
+    PREPROCESS_SCENARIO_NEW_BLOCK,
     PYTHON312_SITE_CUSTOMIZE_BLOCK,
     UTILS_LIGHTNING_NEW_IMPORT,
     ensure_crdp_compat_source_patch,
     ensure_lightning_compat_source_patches,
+    ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
 )
 
@@ -71,6 +74,27 @@ class UpstreamCompatTests(unittest.TestCase):
             self.assertEqual(result, "patched")
             self.assertTrue(init_path.exists())
             self.assertEqual(init_path.read_text(encoding="utf-8"), CRDP_FALLBACK_INIT)
+
+    def test_ensure_preprocess_multiprocessing_compat_source_patch_rewrites_preprocess_data(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            upstream_dir = Path(td)
+            preprocess_dir = upstream_dir / "src" / "preprocess"
+            preprocess_dir.mkdir(parents=True, exist_ok=True)
+            preprocess_path = preprocess_dir / "preprocess_data.py"
+            preprocess_path.write_text(
+                """import numpy as np\nimport multiprocessing as mp\nimport os\nimport time\n\nclass Preprocessor:\n    def _process_scenario(self, scen):\n"""
+                + """        cur_id = scen._scenario_id.reshape(-1)\n        \n        # Extract map data\n        road_obs, ids = get_whole_map(scen)\n        \n        # Extract route data\n        routes, ego_car_width = get_route_global(scen)\n        routes = np.array(routes)\n        ego_car_width = float(ego_car_width)\n        \n        # Extract intention label data\n        mask = scen.object_metadata.is_sdc\n        sdc_xy = np.array(scen.log_trajectory.xy[mask, ...])\n        yaw = np.array(scen.log_trajectory.yaw[mask, ...])\n\n"""
+                + """    def run(self):\n        with mp.Pool(processes=mp.cpu_count()) as pool:\n            for batch_id, scen in enumerate(self.data_iter):\n                t_start = time.time()\n                tasks = self._process_scenario(scen)\n                pool.starmap(workers, tasks)\n                \n                print(f"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}")\n""",
+                encoding="utf-8",
+            )
+
+            result = ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir)
+
+            self.assertEqual(result["host_materialization"], "patched")
+            self.assertEqual(result["safe_start_method"], "patched")
+            rewritten = preprocess_path.read_text(encoding="utf-8")
+            self.assertIn(PREPROCESS_SCENARIO_NEW_BLOCK, rewritten)
+            self.assertIn(PREPROCESS_POOL_NEW_BLOCK, rewritten)
 
     def test_crdp_fallback_module_downsamples_collinear_points(self) -> None:
         with tempfile.TemporaryDirectory() as td:

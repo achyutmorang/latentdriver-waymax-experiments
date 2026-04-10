@@ -11,13 +11,13 @@ from .config import load_config, resolve_repo_relative
 PYTHON312_SITE_CUSTOMIZE_BLOCK = """# latentdriver-waymax-experiments python3.12 compatibility
 import pkgutil
 
-if not hasattr(pkgutil, "ImpImporter"):
+if not hasattr(pkgutil, \"ImpImporter\"):
     class _CodexCompatImpImporter:
         pass
 
     pkgutil.ImpImporter = _CodexCompatImpImporter
 
-if not hasattr(pkgutil, "ImpLoader"):
+if not hasattr(pkgutil, \"ImpLoader\"):
     class _CodexCompatImpLoader:
         pass
 
@@ -114,6 +114,62 @@ class _CRDPCompatModule:
 crdp = _crdp if _crdp is not None else _CRDPCompatModule()
 """
 
+PREPROCESS_SCENARIO_OLD_BLOCK = """        cur_id = scen._scenario_id.reshape(-1)
+        
+        # Extract map data
+        road_obs, ids = get_whole_map(scen)
+        
+        # Extract route data
+        routes, ego_car_width = get_route_global(scen)
+        routes = np.array(routes)
+        ego_car_width = float(ego_car_width)
+        
+        # Extract intention label data
+        mask = scen.object_metadata.is_sdc
+        sdc_xy = np.array(scen.log_trajectory.xy[mask, ...])
+        yaw = np.array(scen.log_trajectory.yaw[mask, ...])
+"""
+
+PREPROCESS_SCENARIO_NEW_BLOCK = """        cur_id = np.asarray(scen._scenario_id).reshape(-1)
+        
+        # Materialize JAX outputs on host before dispatching multiprocessing work.
+        # Worker processes must only receive NumPy / Python values, never JAX device arrays.
+        road_obs, ids = get_whole_map(scen)
+        road_obs = np.asarray(road_obs)
+        ids = np.asarray(ids)
+        
+        # Extract route data
+        routes, ego_car_width = get_route_global(scen)
+        routes = np.asarray(routes)
+        ego_car_width = float(np.asarray(ego_car_width))
+        
+        # Extract intention label data
+        mask = scen.object_metadata.is_sdc
+        sdc_xy = np.asarray(scen.log_trajectory.xy[mask, ...])
+        yaw = np.asarray(scen.log_trajectory.yaw[mask, ...])
+"""
+
+PREPROCESS_POOL_OLD_BLOCK = """        with mp.Pool(processes=mp.cpu_count()) as pool:
+            for batch_id, scen in enumerate(self.data_iter):
+                t_start = time.time()
+                tasks = self._process_scenario(scen)
+                pool.starmap(workers, tasks)
+                
+                print(f\"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}\")
+"""
+
+PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIVER_PREPROCESS_START_METHOD', 'spawn')
+        worker_count = max(1, int(os.environ.get('LATENTDRIVER_PREPROCESS_WORKERS', mp.cpu_count())))
+        mp_ctx = mp.get_context(start_method)
+        with mp_ctx.Pool(processes=worker_count) as pool:
+            for batch_id, scen in enumerate(self.data_iter):
+                t_start = time.time()
+                tasks = self._process_scenario(scen)
+                pool.starmap(workers, tasks)
+                
+                print(f\"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}\")
+"""
+
 
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
@@ -176,7 +232,7 @@ def ensure_python312_compat_sitecustomize(upstream_dir: Path) -> Path:
     return sitecustomize_path
 
 
-def _replace_import_block(path: Path, old: str, new: str) -> str:
+def _replace_source_block(path: Path, old: str, new: str) -> str:
     text = path.read_text(encoding="utf-8")
     if new in text:
         return "already_patched"
@@ -188,17 +244,17 @@ def _replace_import_block(path: Path, old: str, new: str) -> str:
 
 def ensure_lightning_compat_source_patches(upstream_dir: Path) -> Dict[str, str]:
     return {
-        "utils": _replace_import_block(
+        "utils": _replace_source_block(
             upstream_dir / "src" / "utils" / "utils.py",
             UTILS_LIGHTNING_OLD_IMPORT,
             UTILS_LIGHTNING_NEW_IMPORT,
         ),
-        "latentdriver_model": _replace_import_block(
+        "latentdriver_model": _replace_source_block(
             upstream_dir / "src" / "policy" / "latentdriver" / "lantentdriver_model.py",
             MODEL_LIGHTNING_OLD_IMPORT,
             MODEL_LIGHTNING_NEW_IMPORT,
         ),
-        "bc_baseline": _replace_import_block(
+        "bc_baseline": _replace_source_block(
             upstream_dir / "src" / "policy" / "baseline" / "bc_baseline.py",
             MODEL_LIGHTNING_OLD_IMPORT,
             MODEL_LIGHTNING_NEW_IMPORT,
@@ -214,3 +270,19 @@ def ensure_crdp_compat_source_patch(upstream_dir: Path) -> str:
         return "already_patched"
     init_path.write_text(CRDP_FALLBACK_INIT, encoding="utf-8")
     return "patched"
+
+
+def ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir: Path) -> Dict[str, str]:
+    preprocess_path = upstream_dir / "src" / "preprocess" / "preprocess_data.py"
+    return {
+        "host_materialization": _replace_source_block(
+            preprocess_path,
+            PREPROCESS_SCENARIO_OLD_BLOCK,
+            PREPROCESS_SCENARIO_NEW_BLOCK,
+        ),
+        "safe_start_method": _replace_source_block(
+            preprocess_path,
+            PREPROCESS_POOL_OLD_BLOCK,
+            PREPROCESS_POOL_NEW_BLOCK,
+        ),
+    }
