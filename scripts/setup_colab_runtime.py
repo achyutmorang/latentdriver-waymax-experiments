@@ -9,7 +9,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.upstream import ensure_python312_compat_sitecustomize, ensure_upstream_exists
+from latentdriver_waymax_experiments.upstream import (
+    ensure_lightning_compat_source_patches,
+    ensure_python312_compat_sitecustomize,
+    ensure_upstream_exists,
+)
 
 
 WAYMAX_GIT_SPEC = "git+https://github.com/waymo-research/waymax.git@main#egg=waymo-waymax"
@@ -112,8 +116,6 @@ def runtime_install_commands() -> list[list[str]]:
             "tqdm",
             "hydra-core==1.3.2",
             "omegaconf==2.3.0",
-            "lightning==2.3.3",
-            "pytorch-lightning==2.3.3",
             "einops==0.8.0",
             "transformers==4.46.3",
             "huggingface_hub",
@@ -164,6 +166,8 @@ def main() -> int:
     print(f"[latentdriver-setup] sort_vertices patch: {sort_state}")
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
     print(f"[latentdriver-setup] sitecustomize patch: {compat_sitecustomize}")
+    lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
+    print(f"[latentdriver-setup] lightning compat patch: {lightning_compat}")
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])

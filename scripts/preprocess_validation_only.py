@@ -12,7 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.config import load_config
 from latentdriver_waymax_experiments.evaluation import _validation_inputs
-from latentdriver_waymax_experiments.upstream import ensure_python312_compat_sitecustomize, ensure_upstream_exists
+from latentdriver_waymax_experiments.upstream import (
+    ensure_lightning_compat_source_patches,
+    ensure_python312_compat_sitecustomize,
+    ensure_upstream_exists,
+)
 
 
 def build_preprocess_command(*, mode: str) -> list[str]:
@@ -39,6 +43,7 @@ def main() -> int:
 
     upstream_dir = ensure_upstream_exists()
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
+    lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     inputs = _validation_inputs(args.mode)
     cmd = build_preprocess_command(mode=args.mode)
     payload = {
@@ -48,6 +53,7 @@ def main() -> int:
         "preprocess_path": str(inputs["preprocess_path"]),
         "intention_path": str(inputs["intention_path"]),
         "compat_sitecustomize": str(compat_sitecustomize),
+        "lightning_compat": lightning_compat,
     }
     if args.dry_run:
         print(json.dumps(payload, indent=2, sort_keys=True))

@@ -28,7 +28,18 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             raw_root = Path(td)
             os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(raw_root)
             upstream_dir = Path(td) / "LatentDriver"
-            upstream_dir.mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "utils").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "policy" / "latentdriver").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "policy" / "baseline").mkdir(parents=True, exist_ok=True)
+            (upstream_dir / "src" / "utils" / "utils.py").write_text("import pytorch_lightning as pl\n", encoding="utf-8")
+            (upstream_dir / "src" / "policy" / "latentdriver" / "lantentdriver_model.py").write_text(
+                "import torch.nn as nn\nimport pytorch_lightning as pl\n",
+                encoding="utf-8",
+            )
+            (upstream_dir / "src" / "policy" / "baseline" / "bc_baseline.py").write_text(
+                "from torch import nn\nimport pytorch_lightning as pl\n",
+                encoding="utf-8",
+            )
             argv = ["preprocess_validation_only.py", "--mode", "smoke"]
             captured: dict[str, object] = {}
 
@@ -47,6 +58,7 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             self.assertEqual(captured["cwd"], upstream_dir)
             self.assertTrue(str(upstream_dir) in str(captured["env"]["PYTHONPATH"]))
             self.assertTrue((upstream_dir / "sitecustomize.py").exists())
+            self.assertIn("try:\n    import pytorch_lightning as pl", (upstream_dir / "src" / "utils" / "utils.py").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ class SetupColabRuntimeTests(unittest.TestCase):
         self.assertTrue(any("jax[cuda12]>=0.7.0,<0.8" in cmd for cmd in joined))
         self.assertFalse(any("tensorflow==2.15.0" in cmd for cmd in joined))
         self.assertFalse(any("setup.py install" in cmd for cmd in joined))
+        self.assertFalse(any("pytorch-lightning" in cmd for cmd in joined))
+        self.assertFalse(any(" lightning==" in cmd or cmd.endswith(" lightning") for cmd in joined))
 
     def test_patch_gpt2_model_rewrites_old_transformers_import_block(self) -> None:
         with tempfile.TemporaryDirectory() as td:

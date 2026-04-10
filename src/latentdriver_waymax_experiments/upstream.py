@@ -24,6 +24,38 @@ if not hasattr(pkgutil, "ImpLoader"):
     pkgutil.ImpLoader = _CodexCompatImpLoader
 """
 
+UTILS_LIGHTNING_OLD_IMPORT = "import pytorch_lightning as pl\n"
+UTILS_LIGHTNING_NEW_IMPORT = """try:
+    import pytorch_lightning as pl
+except Exception:
+    class _PLCompat:
+        @staticmethod
+        def seed_everything(*args, **kwargs):
+            return None
+
+    pl = _PLCompat()
+"""
+
+MODEL_LIGHTNING_OLD_IMPORT = "import pytorch_lightning as pl\n"
+MODEL_LIGHTNING_NEW_IMPORT = """try:
+    import pytorch_lightning as pl
+except Exception:
+    class _LightningModule(nn.Module):
+        def save_hyperparameters(self, *args, **kwargs):
+            return None
+
+        def log_dict(self, *args, **kwargs):
+            return None
+
+        def log(self, *args, **kwargs):
+            return None
+
+    class _PLCompat:
+        LightningModule = _LightningModule
+
+    pl = _PLCompat()
+"""
+
 
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
@@ -84,3 +116,33 @@ def ensure_python312_compat_sitecustomize(upstream_dir: Path) -> Path:
     updated = PYTHON312_SITE_CUSTOMIZE_BLOCK if not existing else f"{PYTHON312_SITE_CUSTOMIZE_BLOCK}\n{existing}"
     sitecustomize_path.write_text(updated, encoding="utf-8")
     return sitecustomize_path
+
+
+def _replace_import_block(path: Path, old: str, new: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return "already_patched"
+    if old not in text:
+        return "not_found"
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    return "patched"
+
+
+def ensure_lightning_compat_source_patches(upstream_dir: Path) -> Dict[str, str]:
+    return {
+        "utils": _replace_import_block(
+            upstream_dir / "src" / "utils" / "utils.py",
+            UTILS_LIGHTNING_OLD_IMPORT,
+            UTILS_LIGHTNING_NEW_IMPORT,
+        ),
+        "latentdriver_model": _replace_import_block(
+            upstream_dir / "src" / "policy" / "latentdriver" / "lantentdriver_model.py",
+            MODEL_LIGHTNING_OLD_IMPORT,
+            MODEL_LIGHTNING_NEW_IMPORT,
+        ),
+        "bc_baseline": _replace_import_block(
+            upstream_dir / "src" / "policy" / "baseline" / "bc_baseline.py",
+            MODEL_LIGHTNING_OLD_IMPORT,
+            MODEL_LIGHTNING_NEW_IMPORT,
+        ),
+    }
