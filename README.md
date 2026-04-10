@@ -41,6 +41,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/run_waymax_eval.py`](./scripts/run_waymax_eval.py): run a standardized Waymax evaluation for one released checkpoint.
 - [`scripts/run_smoke_eval.py`](./scripts/run_smoke_eval.py): quick smoke evaluation on the one-shard subset.
 - [`scripts/run_public_suite.py`](./scripts/run_public_suite.py): evaluate all released checkpoints under one standardized tier and write a suite summary.
+- [`scripts/plot_model_metrics.py`](./scripts/plot_model_metrics.py): generate static PNG/CSV/JSON plots comparing completed model metrics.
 - [`scripts/run_visualization.py`](./scripts/run_visualization.py): run one visualization job and capture generated MP4/PDF artifacts.
 - [`scripts/run_waymax_board.py`](./scripts/run_waymax_board.py): launch a NuBoard-inspired local Bokeh app for browsing Waymax run bundles, metrics, and visualization artifacts.
 - [`notebooks/`](./notebooks): Colab notebooks for assets, preprocessing, public-eval suite, and visualization.
@@ -124,7 +125,20 @@ python3 scripts/run_public_suite.py --tier full_non_reactive
 python3 scripts/run_visualization.py --model latentdriver_t2_j3 --tier smoke_reactive --vis video
 ```
 
-### 9. Launch the local Waymax viewer
+### 9. Generate static metric comparison plots
+```bash
+python3 scripts/plot_model_metrics.py --tier smoke_reactive --seed 0
+```
+
+This writes:
+
+- `model_metrics.png`: side-by-side metric bar plots across the latest completed run for each public evaluation checkpoint
+- `model_metrics.csv`: tabular metric values for experiment notes
+- `model_metrics.json`: machine-readable plot source data
+
+Pass `--results-root /content/drive/MyDrive/waymax_research/latentdriver_waymax_experiments/results/runs` in Colab if you want to read directly from the Drive-backed run store.
+
+### 10. Launch the local Waymax viewer
 ```bash
 python3 scripts/run_waymax_board.py --results-root "$PWD/results/runs" --port 5007
 ```
