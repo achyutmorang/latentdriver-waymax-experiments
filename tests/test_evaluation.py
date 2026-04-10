@@ -36,6 +36,12 @@ class EvaluationTests(unittest.TestCase):
             cmd = build_eval_command(model="plant", tier="smoke_reactive", vis=False)
             self.assertIn("++method.control_type=waypoint", " ".join(cmd))
 
+    def test_visualization_patch_persists_media_for_straight_intentions(self) -> None:
+        patch_path = Path(__file__).resolve().parents[1] / "patches" / "latentdriver_eval_contract.patch"
+        patch_text = patch_path.read_text(encoding="utf-8")
+        self.assertIn("safe_intention = intention.replace('/', '_').replace(' ', '_') or 'unknown'", patch_text)
+
+
     def test_build_eval_command_honors_seed_override(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             raw_root = Path(td)

@@ -59,7 +59,7 @@ index b6e97b1..f0b3711 100755
 \ No newline at end of file
 +    simulate()
 diff --git a/simulator/engines/base_simulator.py b/simulator/engines/base_simulator.py
-index 4a646f5..9d9b6f0 100755
+index 4a646f5..6dde270 100755
 --- a/simulator/engines/base_simulator.py
 +++ b/simulator/engines/base_simulator.py
 @@ -2,10 +2,13 @@ import time
@@ -101,7 +101,7 @@ index 4a646f5..9d9b6f0 100755
          def save_image():
              img = plot_seq2image(state=self.env.states[-1],batch_idx=j)
              img.savefig(name+'.pdf',dpi=300,format='pdf')
-@@ -87,7 +99,10 @@ class BaseSimulator():
+@@ -87,31 +99,22 @@ class BaseSimulator():
          if vis==False:
              return
          assert vis in ['image','video'], "vis must be either 'image' or 'video'"
@@ -111,15 +111,46 @@ index 4a646f5..9d9b6f0 100755
 +        else:
 +            root_folder = f'vis_results/{model_name}/{vis}/'
          os.makedirs(root_folder, exist_ok=True)
-         os.makedirs(root_folder+'straight_', exist_ok=True)
-         os.makedirs(root_folder+'turning_left', exist_ok=True)
-@@ -114,4 +129,4 @@ class BaseSimulator():
-                 if vis == 'image':
-                     save_image()
-                 elif vis == 'video':
+-        os.makedirs(root_folder+'straight_', exist_ok=True)
+-        os.makedirs(root_folder+'turning_left', exist_ok=True)
+-        os.makedirs(root_folder+'turning_right', exist_ok=True)
+-        os.makedirs(root_folder+'U-turn_left', exist_ok=True)
+         for j in range(self.size):
+-            intention = self.env.intention_label[j]
+-            if intention == 'straight_':
+-                # sub_folder = root_folder+'straight_'
+-                sub_folder = None
+-            elif intention == 'turning_left':
+-                sub_folder = root_folder+'turning_left'
+-            elif intention == 'turning_right':
+-                sub_folder = root_folder+'turning_right'
+-            elif intention == 'U-turn_left':
+-                sub_folder = root_folder+'U-turn_left'
+-            else: sub_folder = None
+-            if sub_folder is not None:
+-                scen_id = self.env.get_env_idx(j)
+-                is_offroad = self.env.metric.info_hack['metric/offroad_rate'].reshape(-1)[j]
+-                is_collision = self.env.metric.info_hack['metric/collision_rate'].reshape(-1)[j]
+-                is_ar90 = self.env.metric.info_hack['metric/arrival_rate90'].reshape(-1)[j]
+-                name = f'{sub_folder}/AR{is_ar90}_OR{is_offroad}_CR{is_collision}_{scen_id}'
+-                if vis == 'image':
+-                    save_image()
+-                elif vis == 'video':
 -                    save_video()
 \ No newline at end of file
-+                    save_video()
++            intention = str(self.env.intention_label[j])
++            safe_intention = intention.replace('/', '_').replace(' ', '_') or 'unknown'
++            sub_folder = root_folder + safe_intention
++            os.makedirs(sub_folder, exist_ok=True)
++            scen_id = self.env.get_env_idx(j)
++            is_offroad = self.env.metric.info_hack['metric/offroad_rate'].reshape(-1)[j]
++            is_collision = self.env.metric.info_hack['metric/collision_rate'].reshape(-1)[j]
++            is_ar90 = self.env.metric.info_hack['metric/arrival_rate90'].reshape(-1)[j]
++            name = f'{sub_folder}/AR{is_ar90}_OR{is_offroad}_CR{is_collision}_{scen_id}'
++            if vis == 'image':
++                save_image()
++            elif vis == 'video':
++                save_video()
 diff --git a/simulator/engines/ltd_simulator.py b/simulator/engines/ltd_simulator.py
 index d7f4a0e..028f713 100755
 --- a/simulator/engines/ltd_simulator.py
