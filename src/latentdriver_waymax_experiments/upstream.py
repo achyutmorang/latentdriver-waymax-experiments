@@ -56,6 +56,64 @@ except Exception:
     pl = _PLCompat()
 """
 
+CRDP_FALLBACK_INIT = """from __future__ import annotations
+
+import importlib
+import numpy as np
+
+try:
+    _crdp = importlib.import_module(f"{__name__}.crdp")
+except Exception:
+    _crdp = None
+
+
+def _rdp_mask(points: np.ndarray, epsilon: float) -> np.ndarray:
+    n = int(points.shape[0])
+    if n <= 2:
+        return np.ones(n, dtype=bool)
+    mask = np.ones(n, dtype=bool)
+    stack = [(0, n - 1)]
+    while stack:
+        st, ed = stack.pop()
+        if ed - st <= 1:
+            continue
+        start = points[st]
+        end = points[ed]
+        segment = end - start
+        segment_norm = float(np.linalg.norm(segment))
+        dmax = 0.0
+        index = st
+        for i in range(st + 1, ed):
+            if segment_norm:
+                distance = abs(segment[1] * points[i, 0] - segment[0] * points[i, 1] + end[0] * start[1] - end[1] * start[0]) / segment_norm
+            else:
+                distance = float(np.linalg.norm(points[i] - start))
+            if distance > dmax:
+                dmax = distance
+                index = i
+        if dmax > epsilon:
+            stack.append((st, index))
+            stack.append((index, ed))
+        else:
+            mask[st + 1:ed] = False
+    return mask
+
+
+class _CRDPCompatModule:
+    @staticmethod
+    def rdp(points, epsilon=0.0, return_mask=False):
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2:
+            raise ValueError(f"Expected points with shape [N, 2], got {pts.shape!r}")
+        mask = _rdp_mask(pts, float(epsilon))
+        if return_mask:
+            return mask.tolist()
+        return [points[i] for i, keep in enumerate(mask.tolist()) if keep]
+
+
+crdp = _crdp if _crdp is not None else _CRDPCompatModule()
+"""
+
 
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
@@ -146,3 +204,13 @@ def ensure_lightning_compat_source_patches(upstream_dir: Path) -> Dict[str, str]
             MODEL_LIGHTNING_NEW_IMPORT,
         ),
     }
+
+
+def ensure_crdp_compat_source_patch(upstream_dir: Path) -> str:
+    init_path = upstream_dir / "src" / "ops" / "crdp" / "__init__.py"
+    init_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = init_path.read_text(encoding="utf-8") if init_path.exists() else ""
+    if existing == CRDP_FALLBACK_INIT:
+        return "already_patched"
+    init_path.write_text(CRDP_FALLBACK_INIT, encoding="utf-8")
+    return "patched"

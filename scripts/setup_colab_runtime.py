@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.upstream import (
+    ensure_crdp_compat_source_patch,
     ensure_lightning_compat_source_patches,
     ensure_python312_compat_sitecustomize,
     ensure_upstream_exists,
@@ -168,6 +169,8 @@ def main() -> int:
     print(f"[latentdriver-setup] sitecustomize patch: {compat_sitecustomize}")
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     print(f"[latentdriver-setup] lightning compat patch: {lightning_compat}")
+    crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
+    print(f"[latentdriver-setup] crdp compat patch: {crdp_compat}")
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])

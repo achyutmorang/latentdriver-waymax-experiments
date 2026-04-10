@@ -58,7 +58,11 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             self.assertEqual(captured["cwd"], upstream_dir)
             self.assertTrue(str(upstream_dir) in str(captured["env"]["PYTHONPATH"]))
             self.assertTrue((upstream_dir / "sitecustomize.py").exists())
-            self.assertIn("try:\n    import pytorch_lightning as pl", (upstream_dir / "src" / "utils" / "utils.py").read_text(encoding="utf-8"))
+            self.assertTrue((upstream_dir / "src" / "ops" / "crdp" / "__init__.py").exists())
+            self.assertIn(
+                "try:\n    import pytorch_lightning as pl",
+                (upstream_dir / "src" / "utils" / "utils.py").read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":
