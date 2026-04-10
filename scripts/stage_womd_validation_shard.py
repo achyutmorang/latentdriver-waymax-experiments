@@ -45,7 +45,7 @@ def main() -> int:
     transfer = None
     if not target.exists():
         transfer = copy_gcs_to_local(source, target)
-        print("[stage-womd] $", " ".join(transfer["command"]))
+        print("[stage-womd] $", " ".join(transfer["command"]), file=sys.stderr)
 
     payload["transfer"] = transfer
 
