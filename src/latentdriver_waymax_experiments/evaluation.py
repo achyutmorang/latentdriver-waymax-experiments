@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List
 
 from .artifacts import create_run_bundle, write_json
 from .config import load_config, resolve_repo_relative
-from .upstream import ensure_upstream_exists
+from .upstream import ensure_python312_compat_sitecustomize, ensure_upstream_exists
 from .womd import local_dataset_uri_exists, resolve_dataset_uri, waymo_dataset_root_value
 
 
@@ -123,6 +123,7 @@ def _verify_inputs(model: str, tier: str) -> Dict[str, str]:
 
 def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool = False, dry_run: bool = False) -> Dict[str, Any]:
     upstream_dir = ensure_upstream_exists()
+    compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
     resolved_seed = int(load_config()["evaluation"]["tiers"][tier].get("seed", 0) if seed is None else seed)
     bundle = create_run_bundle(tier=f"{tier}_{model}_seed{resolved_seed}")
     cmd = build_eval_command(model=model, tier=tier, seed=resolved_seed, vis=vis, metrics_path=bundle["metrics_path"], vis_output_dir=bundle["vis_dir"])
@@ -134,6 +135,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
         "vis": vis,
         "command": cmd,
         "missing_inputs": missing,
+        "compat_sitecustomize": str(compat_sitecustomize),
     }
     write_json(bundle["config_snapshot"], snapshot)
     if dry_run:

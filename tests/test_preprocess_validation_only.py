@@ -46,6 +46,7 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(captured["cwd"], upstream_dir)
             self.assertTrue(str(upstream_dir) in str(captured["env"]["PYTHONPATH"]))
+            self.assertTrue((upstream_dir / "sitecustomize.py").exists())
 
 
 if __name__ == "__main__":

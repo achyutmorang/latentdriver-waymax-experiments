@@ -8,6 +8,23 @@ from typing import Any, Dict
 from .config import load_config, resolve_repo_relative
 
 
+PYTHON312_SITE_CUSTOMIZE_BLOCK = """# latentdriver-waymax-experiments python3.12 compatibility
+import pkgutil
+
+if not hasattr(pkgutil, "ImpImporter"):
+    class _CodexCompatImpImporter:
+        pass
+
+    pkgutil.ImpImporter = _CodexCompatImpImporter
+
+if not hasattr(pkgutil, "ImpLoader"):
+    class _CodexCompatImpLoader:
+        pass
+
+    pkgutil.ImpLoader = _CodexCompatImpLoader
+"""
+
+
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
     return {
@@ -57,3 +74,13 @@ def ensure_upstream_exists() -> Path:
     if not repo_dir.exists():
         raise FileNotFoundError(f"Upstream repo missing: {repo_dir}. Run scripts/bootstrap_upstream.py first.")
     return repo_dir
+
+
+def ensure_python312_compat_sitecustomize(upstream_dir: Path) -> Path:
+    sitecustomize_path = upstream_dir / "sitecustomize.py"
+    existing = sitecustomize_path.read_text(encoding="utf-8") if sitecustomize_path.exists() else ""
+    if PYTHON312_SITE_CUSTOMIZE_BLOCK in existing:
+        return sitecustomize_path
+    updated = PYTHON312_SITE_CUSTOMIZE_BLOCK if not existing else f"{PYTHON312_SITE_CUSTOMIZE_BLOCK}\n{existing}"
+    sitecustomize_path.write_text(updated, encoding="utf-8")
+    return sitecustomize_path

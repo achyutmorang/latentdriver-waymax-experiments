@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.upstream import ensure_upstream_exists
+from latentdriver_waymax_experiments.upstream import ensure_python312_compat_sitecustomize, ensure_upstream_exists
 
 
 WAYMAX_GIT_SPEC = "git+https://github.com/waymo-research/waymax.git@main#egg=waymo-waymax"
@@ -162,6 +162,8 @@ def main() -> int:
     print(f"[latentdriver-setup] gpt2_model patch: {gpt2_state}")
     sort_state = patch_sort_vertices(upstream_dir)
     print(f"[latentdriver-setup] sort_vertices patch: {sort_state}")
+    compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
+    print(f"[latentdriver-setup] sitecustomize patch: {compat_sitecustomize}")
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])
