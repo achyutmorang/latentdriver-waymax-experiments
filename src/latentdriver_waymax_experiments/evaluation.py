@@ -14,6 +14,7 @@ from .upstream import (
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
+    ensure_matplotlib_canvas_compat_source_patch,
     ensure_python312_compat_sitecustomize,
     ensure_upstream_exists,
 )
@@ -172,6 +173,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
     jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+    matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
     resolved_seed = int(load_config()["evaluation"]["tiers"][tier].get("seed", 0) if seed is None else seed)
     bundle = create_run_bundle(tier=f"{tier}_{model}_seed{resolved_seed}")
     cmd = build_eval_command(model=model, tier=tier, seed=resolved_seed, vis=vis, metrics_path=bundle["metrics_path"], vis_output_dir=bundle["vis_dir"])
@@ -187,6 +189,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
         "lightning_compat": lightning_compat,
         "crdp_compat": crdp_compat,
         "jax_tree_map_compat": jax_tree_map_compat,
+        "matplotlib_canvas_compat": matplotlib_canvas_compat,
     }
     write_json(bundle["config_snapshot"], snapshot)
     if dry_run:

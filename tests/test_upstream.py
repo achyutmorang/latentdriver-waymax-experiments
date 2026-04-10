@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from latentdriver_waymax_experiments.upstream import (
     CRDP_FALLBACK_INIT,
     JAX_TREE_MAP_COMPAT_FILES,
+    MATPLOTLIB_IMG_FROM_FIG_NEW_BLOCK,
     MODEL_LIGHTNING_NEW_IMPORT,
     PREPROCESS_POOL_NEW_BLOCK,
     PREPROCESS_SCENARIO_NEW_BLOCK,
@@ -19,6 +20,7 @@ from latentdriver_waymax_experiments.upstream import (
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
+    ensure_matplotlib_canvas_compat_source_patch,
     ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
 )
@@ -114,6 +116,28 @@ class UpstreamCompatTests(unittest.TestCase):
                 rewritten = (upstream_dir / relative_path).read_text(encoding="utf-8")
                 self.assertIn("jax.tree_util.tree_map(", rewritten)
                 self.assertNotIn("jax.tree_map(", rewritten)
+
+    def test_ensure_matplotlib_canvas_compat_source_patch_rewrites_img_from_fig(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            upstream_dir = Path(td)
+            utils_path = upstream_dir / "waymax" / "visualization" / "utils.py"
+            utils_path.parent.mkdir(parents=True, exist_ok=True)
+            utils_path.write_text(
+                """def img_from_fig(fig):
+  fig.canvas.draw()
+  data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+  img = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  return img
+""",
+                encoding="utf-8",
+            )
+
+            result = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
+
+            self.assertEqual(result, "patched")
+            rewritten = utils_path.read_text(encoding="utf-8")
+            self.assertIn(MATPLOTLIB_IMG_FROM_FIG_NEW_BLOCK, rewritten)
+            self.assertIn("canvas.buffer_rgba()", rewritten)
 
     def test_crdp_fallback_module_downsamples_collinear_points(self) -> None:
         with tempfile.TemporaryDirectory() as td:

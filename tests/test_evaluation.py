@@ -108,6 +108,7 @@ class EvaluationTests(unittest.TestCase):
                  patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_matplotlib_canvas_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
                  patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \
@@ -144,6 +145,7 @@ class EvaluationTests(unittest.TestCase):
                  patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_matplotlib_canvas_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
                  patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \
@@ -182,6 +184,7 @@ class EvaluationTests(unittest.TestCase):
                  patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_matplotlib_canvas_compat_source_patch", return_value="already_patched"), \
                  patch("latentdriver_waymax_experiments.evaluation.create_run_bundle", return_value=bundle), \
                  patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
                  patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py"]), \

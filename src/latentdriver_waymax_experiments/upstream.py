@@ -171,6 +171,20 @@ PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIV
 """
 
 
+MATPLOTLIB_IMG_FROM_FIG_OLD_BLOCK = """  fig.canvas.draw()
+  data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+  img = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+"""
+
+MATPLOTLIB_IMG_FROM_FIG_NEW_BLOCK = """  fig.canvas.draw()
+  canvas = fig.canvas
+  if hasattr(canvas, 'tostring_rgb'):
+    data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+    img = data.reshape(canvas.get_width_height()[::-1] + (3,))
+  else:
+    img = np.asarray(canvas.buffer_rgba(), dtype=np.uint8)[..., :3].copy()
+"""
+
 JAX_TREE_MAP_COMPAT_FILES = (
     Path("simulator") / "utils.py",
     Path("waymax") / "agents" / "expert.py",
@@ -294,6 +308,14 @@ def ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir: Path) ->
             PREPROCESS_POOL_NEW_BLOCK,
         ),
     }
+
+def ensure_matplotlib_canvas_compat_source_patch(upstream_dir: Path) -> str:
+    return _replace_source_block(
+        upstream_dir / "waymax" / "visualization" / "utils.py",
+        MATPLOTLIB_IMG_FROM_FIG_OLD_BLOCK,
+        MATPLOTLIB_IMG_FROM_FIG_NEW_BLOCK,
+    )
+
 
 def ensure_jax_tree_map_compat_source_patch(upstream_dir: Path) -> Dict[str, str]:
     statuses: Dict[str, str] = {}

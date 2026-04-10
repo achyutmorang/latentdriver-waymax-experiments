@@ -13,6 +13,7 @@ from latentdriver_waymax_experiments.upstream import (
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
+    ensure_matplotlib_canvas_compat_source_patch,
     ensure_preprocess_multiprocessing_compat_source_patch,
     ensure_python312_compat_sitecustomize,
     ensure_upstream_exists,
@@ -238,6 +239,8 @@ def main() -> int:
     print(f"[latentdriver-setup] preprocess multiprocessing compat patch: {preprocess_multiprocessing_compat}")
     jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
     print(f"[latentdriver-setup] jax tree_map compat patch: {jax_tree_map_compat}")
+    matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
+    print(f"[latentdriver-setup] matplotlib canvas compat patch: {matplotlib_canvas_compat}")
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", "."])

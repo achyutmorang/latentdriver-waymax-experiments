@@ -268,3 +268,22 @@ index bb1e438..6ce0946 100755
 +                for key, value in self.info_by_class_global.items()
 +            },
 +        }
+diff --git a/waymax/visualization/utils.py b/waymax/visualization/utils.py
+index aa59abe..728999c 100755
+--- a/waymax/visualization/utils.py
++++ b/waymax/visualization/utils.py
+@@ -89,8 +89,12 @@ def img_from_fig(fig: matplotlib.figure.Figure) -> np.ndarray:
+       left=0.02, bottom=0.02, right=0.98, top=0.98, wspace=0.0, hspace=0.0
+   )
+   fig.canvas.draw()
+-  data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+-  img = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
++  canvas = fig.canvas
++  if hasattr(canvas, 'tostring_rgb'):
++    data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
++    img = data.reshape(canvas.get_width_height()[::-1] + (3,))
++  else:
++    img = np.asarray(canvas.buffer_rgba(), dtype=np.uint8)[..., :3].copy()
+   plt.close(fig)
+   return img
+ 
