@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--vis", choices=["image", "video"], default=DEFAULT_VIS)
     parser.add_argument("--debug-root", type=Path, help="Override debug bundle root. Defaults to Drive sibling of results/runs when bound.")
+    parser.add_argument("--waymo-dataset-root", help="Set LATENTDRIVER_WAYMO_DATASET_ROOT for this canary process and its child steps.")
     parser.add_argument("--install-runtime", action="store_true", help="Run scripts/setup_colab_runtime.py before the selected profile.")
     parser.add_argument("--auto-install-runtime", action="store_true", help="Install runtime for profiles that need it by default.")
     parser.add_argument("--download-checkpoints", action="store_true", help="Run checkpoint download/verification before the selected profile.")
@@ -37,6 +39,8 @@ def main() -> int:
         return 0
     if not args.profile:
         parser.error("--profile is required unless --list-profiles is used")
+    if args.waymo_dataset_root:
+        os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = args.waymo_dataset_root
 
     install_runtime = args.install_runtime or (
         args.auto_install_runtime and should_install_runtime_by_default(args.profile)

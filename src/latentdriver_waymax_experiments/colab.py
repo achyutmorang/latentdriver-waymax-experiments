@@ -46,18 +46,22 @@ def bind_drive_layout(drive_root: str) -> Dict[str, str]:
     preprocessed = root / "assets" / "preprocessed"
     smoke = root / "assets" / "smoke"
     results = root / "results" / "runs"
-    for path in (checkpoints, preprocessed, smoke, results):
+    debug_runs = root / "debug_runs"
+    for path in (checkpoints, preprocessed, smoke, results, debug_runs):
         path.mkdir(parents=True, exist_ok=True)
 
     _bind_symlink(resolve_repo_relative("artifacts/assets/checkpoints"), checkpoints)
     _bind_symlink(resolve_repo_relative("artifacts/assets/preprocessed"), preprocessed)
     _bind_symlink(resolve_repo_relative("artifacts/assets/smoke"), smoke)
     _bind_symlink(resolve_repo_relative("results/runs"), results)
+    _bind_symlink(resolve_repo_relative("results/debug_runs"), debug_runs)
     os.environ["LATENTDRIVER_RESULTS_ROOT"] = str(results)
+    os.environ["LATENTDRIVER_DEBUG_ROOT"] = str(debug_runs)
     return {
         "drive_root": str(root),
         "checkpoints": str(checkpoints),
         "preprocessed": str(preprocessed),
         "smoke": str(smoke),
         "results": str(results),
+        "debug_runs": str(debug_runs),
     }

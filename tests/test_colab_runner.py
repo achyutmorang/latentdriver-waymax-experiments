@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,7 +39,11 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertTrue(should_install_runtime_by_default("full-eval-reactive"))
 
     def test_resolve_debug_root_uses_drive_project_sibling_of_results_runs(self) -> None:
-        with patch.dict(os.environ, {"LATENTDRIVER_RESULTS_ROOT": "/content/drive/MyDrive/waymax_research/latentdriver_waymax_experiments/results/runs"}):
+        with patch.dict(
+            os.environ,
+            {"LATENTDRIVER_RESULTS_ROOT": "/content/drive/MyDrive/waymax_research/latentdriver_waymax_experiments/results/runs"},
+            clear=True,
+        ):
             self.assertEqual(
                 resolve_debug_root(),
                 Path("/content/drive/MyDrive/waymax_research/latentdriver_waymax_experiments/debug_runs"),
@@ -92,6 +97,31 @@ class ColabRunnerTests(unittest.TestCase):
             ledger_rows = (debug_root / "RUN_LEDGER.jsonl").read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(ledger_rows), 1)
             self.assertEqual(json.loads(ledger_rows[0])["failed_step"], "forced_failure")
+
+    def test_colab_canary_cli_sets_waymo_dataset_root_for_dry_run_status(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/colab_canary.py",
+                    "--profile",
+                    "full-eval-dry-run",
+                    "--dry-run",
+                    "--debug-root",
+                    td,
+                    "--waymo-dataset-root",
+                    "gs://waymo_open_dataset_motion_v_1_1_0",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            bundle = next(Path(td).glob("*_full_eval_dry_run"))
+            status = json.loads((bundle / "artifact_status_before.json").read_text(encoding="utf-8"))
+            self.assertTrue(status["datasets"]["full"]["exists_or_remote"])
+            self.assertIn("gs://waymo_open_dataset_motion_v_1_1_0", status["datasets"]["full"]["uri"])
 
 
 if __name__ == "__main__":
