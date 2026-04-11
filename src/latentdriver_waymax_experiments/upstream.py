@@ -131,6 +131,11 @@ PREPROCESS_DIR_CHECK_NEW_BLOCK = """        os.makedirs(self.path_to_map, exist_
         os.makedirs(self.intention_label_path, exist_ok=True)
 """
 
+PREPROCESS_CHECK_AND_CREATE_DIRS_BODY = '''        """
+        Create output directories while preserving partial preprocessing caches.
+        """
+''' + PREPROCESS_DIR_CHECK_NEW_BLOCK + "\n"
+
 PREPROCESS_SCENARIO_OLD_BLOCK = """        cur_id = scen._scenario_id.reshape(-1)
 
         # Extract map data
@@ -241,6 +246,13 @@ PREPROCESS_TASKS_NEW_BLOCK = """        tasks = []
         return tasks
 """.replace("\n\n", "\n        \n")
 
+PREPROCESS_PROCESS_SCENARIO_BODY = '''        """
+        Process a single scenario to extract map, route, and intention label data.
+
+        Existing per-scenario outputs are skipped so interrupted full validation preprocessing can resume.
+        """
+''' + PREPROCESS_SCENARIO_NEW_BLOCK + "\n" + PREPROCESS_TASKS_NEW_BLOCK + "\n"
+
 PREPROCESS_POOL_OLD_BLOCK = """        with mp.Pool(processes=mp.cpu_count()) as pool:
             for batch_id, scen in enumerate(self.data_iter):
                 t_start = time.time()
@@ -282,6 +294,17 @@ PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIV
 
                 print(f\"Processed; current batch is: {batch_id}; Tasks: {len(tasks)}; Using time is: {time.time() - t_start}\")
 """.replace("\n\n", "\n                \n")
+
+PREPROCESS_RUN_BODY = '''        """
+        Run the preprocessing pipeline.
+        """
+        self._check_and_create_dirs()
+
+        print(f'Start dumping whole map, the map will be saved in {self.path_to_map}')
+        print(f'Start dumping route, the route will be saved in {self.path_to_route}')
+        print(f'Start dumping intention label, the intention label will be saved in {self.intention_label_path}')
+
+''' + PREPROCESS_POOL_NEW_BLOCK
 
 
 MATPLOTLIB_IMG_FROM_FIG_OLD_BLOCK = """  fig.canvas.draw()
@@ -382,6 +405,25 @@ def _replace_source_block_candidates(path: Path, old_candidates: tuple[str, ...]
     return "not_found"
 
 
+def _replace_method_body(path: Path, method_signature: str, end_marker: str, new_body: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    method_start = text.find(method_signature)
+    if method_start == -1:
+        return "not_found"
+    body_start = text.find("\n", method_start)
+    if body_start == -1:
+        return "not_found"
+    body_start += 1
+    body_end = text.find(end_marker, body_start)
+    if body_end == -1:
+        return "not_found"
+    current_body = text[body_start:body_end]
+    if current_body == new_body:
+        return "already_patched"
+    path.write_text(text[:body_start] + new_body + text[body_end:], encoding="utf-8")
+    return "patched"
+
+
 def ensure_lightning_compat_source_patches(upstream_dir: Path) -> Dict[str, str]:
     return {
         "utils": _replace_source_block(
@@ -414,27 +456,29 @@ def ensure_crdp_compat_source_patch(upstream_dir: Path) -> str:
 
 def ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir: Path) -> Dict[str, str]:
     preprocess_path = upstream_dir / "src" / "preprocess" / "preprocess_data.py"
+    resume_dirs = _replace_method_body(
+        preprocess_path,
+        "    def _check_and_create_dirs(self):",
+        "    def _process_scenario(self, scen):",
+        PREPROCESS_CHECK_AND_CREATE_DIRS_BODY,
+    )
+    process_scenario = _replace_method_body(
+        preprocess_path,
+        "    def _process_scenario(self, scen):",
+        "    def run(self):",
+        PREPROCESS_PROCESS_SCENARIO_BODY,
+    )
+    safe_start_method = _replace_method_body(
+        preprocess_path,
+        "    def run(self):",
+        "\n@hydra.main",
+        PREPROCESS_RUN_BODY,
+    )
     return {
-        "resume_dirs": _replace_source_block(
-            preprocess_path,
-            PREPROCESS_DIR_CHECK_OLD_BLOCK,
-            PREPROCESS_DIR_CHECK_NEW_BLOCK,
-        ),
-        "host_materialization": _replace_source_block_candidates(
-            preprocess_path,
-            (PREPROCESS_SCENARIO_OLD_BLOCK, PREPROCESS_SCENARIO_HOST_MATERIALIZED_BLOCK),
-            PREPROCESS_SCENARIO_NEW_BLOCK,
-        ),
-        "resume_tasks": _replace_source_block(
-            preprocess_path,
-            PREPROCESS_TASKS_OLD_BLOCK,
-            PREPROCESS_TASKS_NEW_BLOCK,
-        ),
-        "safe_start_method": _replace_source_block_candidates(
-            preprocess_path,
-            (PREPROCESS_POOL_OLD_BLOCK, PREPROCESS_POOL_START_METHOD_BLOCK),
-            PREPROCESS_POOL_NEW_BLOCK,
-        ),
+        "resume_dirs": resume_dirs,
+        "host_materialization": process_scenario,
+        "resume_tasks": process_scenario,
+        "safe_start_method": safe_start_method,
     }
 
 def ensure_matplotlib_canvas_compat_source_patch(upstream_dir: Path) -> str:
@@ -460,4 +504,3 @@ def ensure_jax_tree_map_compat_source_patch(upstream_dir: Path) -> Dict[str, str
         path.write_text(source.replace("jax.tree_map(", "jax.tree_util.tree_map("), encoding="utf-8")
         statuses[key] = "patched"
     return statuses
-

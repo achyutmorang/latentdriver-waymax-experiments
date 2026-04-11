@@ -159,6 +159,11 @@ def main() -> int:
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
     preprocess_multiprocessing_compat = ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir)
+    missing_preprocess_patches = {
+        name: status for name, status in preprocess_multiprocessing_compat.items() if status == "not_found"
+    }
+    if missing_preprocess_patches:
+        raise RuntimeError(f"Unable to patch upstream preprocessing safely: {missing_preprocess_patches}")
     inputs = _validation_inputs(args.mode)
     cmd = build_preprocess_command(mode=args.mode, batch_size=args.batch_size)
     cache_status = preprocess_cache_status(args.mode)
