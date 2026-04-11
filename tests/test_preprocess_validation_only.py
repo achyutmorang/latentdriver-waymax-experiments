@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -94,6 +95,30 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
                 status = preprocess_cache_status("smoke")
                 self.assertTrue(status["complete"])
                 self.assertFalse(status["partial"])
+            finally:
+                clear_preprocess_outputs("smoke")
+
+    def test_preprocess_cache_status_reuses_success_manifest_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = str(Path(td) / "raw")
+            smoke_root = REPO_ROOT / "artifacts" / "assets" / "preprocessed" / "smoke"
+            preprocess_root = smoke_root / "val_preprocessed_path"
+            map_dir = preprocess_root / "map"
+            route_dir = preprocess_root / "route"
+            intention_dir = smoke_root / "val_intention_label"
+            try:
+                map_dir.mkdir(parents=True, exist_ok=True)
+                route_dir.mkdir(parents=True, exist_ok=True)
+                intention_dir.mkdir(parents=True, exist_ok=True)
+                (preprocess_root / "_SUCCESS").write_text("complete\n", encoding="utf-8")
+                (preprocess_root / "preprocess_manifest.json").write_text(
+                    json.dumps({"counts": {"map_npy": 44097, "route_npy": 44097, "intention_txt": 44097}}),
+                    encoding="utf-8",
+                )
+                status = preprocess_cache_status("smoke")
+                self.assertTrue(status["complete"])
+                self.assertEqual(status["counts_source"], "manifest")
+                self.assertEqual(status["counts"]["map_npy"], 44097)
             finally:
                 clear_preprocess_outputs("smoke")
 

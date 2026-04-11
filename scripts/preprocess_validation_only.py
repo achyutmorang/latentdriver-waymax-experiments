@@ -58,23 +58,81 @@ def _preprocess_output_paths(mode: str) -> dict[str, Path]:
 
 
 def _dir_has_entries(path: Path) -> bool:
-    return path.is_dir() and any(path.iterdir())
+    try:
+        return path.is_dir() and any(path.iterdir())
+    except OSError:
+        return False
 
 
-def _count_files(path: Path, suffix: str) -> int:
-    if not path.is_dir():
-        return 0
-    return sum(1 for item in path.iterdir() if item.is_file() and item.suffix == suffix and item.stat().st_size > 0)
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _path_is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _load_manifest_counts(path: Path) -> dict[str, int]:
+    try:
+        if not path.is_file():
+            return {}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    counts = payload.get("counts", {})
+    if not isinstance(counts, dict):
+        return {}
+    return {key: value for key, value in counts.items() if isinstance(value, int)}
+
+
+def _count_files(path: Path, suffix: str) -> int | None:
+    try:
+        if not path.is_dir():
+            return 0
+        return sum(1 for item in path.iterdir() if item.is_file() and item.suffix == suffix and item.stat().st_size > 0)
+    except OSError:
+        return None
+
+
+def _positive_count(counts: dict[str, int], key: str) -> bool:
+    return int(counts.get(key, 0)) > 0
+
+
+def _has_positive_manifest_counts(counts: dict[str, int]) -> bool:
+    return all(_positive_count(counts, key) for key in ("map_npy", "route_npy", "intention_txt"))
 
 
 def preprocess_cache_status(mode: str) -> dict[str, object]:
     paths = _preprocess_output_paths(mode)
-    map_ready = _dir_has_entries(paths["map_dir"])
-    route_ready = _dir_has_entries(paths["route_dir"])
-    intention_ready = _dir_has_entries(paths["intention_dir"])
     success_ready = paths["success_marker"].is_file()
+    manifest_counts = _load_manifest_counts(paths["manifest"]) if success_ready else {}
+    use_manifest_counts = _has_positive_manifest_counts(manifest_counts)
+    if use_manifest_counts:
+        counts = {
+            "map_npy": manifest_counts.get("map_npy", 0),
+            "route_npy": manifest_counts.get("route_npy", 0),
+            "intention_txt": manifest_counts.get("intention_txt", 0),
+        }
+        map_ready = _path_is_dir(paths["map_dir"]) and _positive_count(counts, "map_npy")
+        route_ready = _path_is_dir(paths["route_dir"]) and _positive_count(counts, "route_npy")
+        intention_ready = _path_is_dir(paths["intention_dir"]) and _positive_count(counts, "intention_txt")
+    else:
+        map_ready = _dir_has_entries(paths["map_dir"])
+        route_ready = _dir_has_entries(paths["route_dir"])
+        intention_ready = _dir_has_entries(paths["intention_dir"])
+        counts = {
+            "map_npy": _count_files(paths["map_dir"], ".npy"),
+            "route_npy": _count_files(paths["route_dir"], ".npy"),
+            "intention_txt": _count_files(paths["intention_dir"], ".txt"),
+        }
     any_present = any(
-        path.exists()
+        _path_exists(path)
         for path in [paths["map_dir"], paths["route_dir"], paths["intention_dir"], paths["success_marker"], paths["manifest"]]
     )
     complete = map_ready and route_ready and intention_ready and success_ready
@@ -88,11 +146,8 @@ def preprocess_cache_status(mode: str) -> dict[str, object]:
         "any_present": any_present,
         "complete": complete,
         "partial": partial,
-        "counts": {
-            "map_npy": _count_files(paths["map_dir"], ".npy"),
-            "route_npy": _count_files(paths["route_dir"], ".npy"),
-            "intention_txt": _count_files(paths["intention_dir"], ".txt"),
-        },
+        "counts": counts,
+        "counts_source": "manifest" if use_manifest_counts else "filesystem",
     }
 
 
