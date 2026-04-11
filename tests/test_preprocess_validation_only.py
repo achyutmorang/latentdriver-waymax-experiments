@@ -67,6 +67,8 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             self.assertEqual(captured["cwd"], upstream_dir)
             self.assertTrue(str(upstream_dir) in str(captured["env"]["PYTHONPATH"]))
             self.assertEqual(captured["env"]["LATENTDRIVER_PREPROCESS_START_METHOD"], "spawn")
+            self.assertEqual(captured["env"]["LATENTDRIVER_PREPROCESS_WORKERS"], "1")
+            self.assertEqual(captured["env"]["JAX_PLATFORMS"], "cpu")
             self.assertTrue((upstream_dir / "sitecustomize.py").exists())
             self.assertTrue((upstream_dir / "src" / "ops" / "crdp" / "__init__.py").exists())
             self.assertIn(
@@ -88,6 +90,7 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
                 (map_dir / "a.npy").write_text("x", encoding="utf-8")
                 (route_dir / "a.npy").write_text("x", encoding="utf-8")
                 (intention_dir / "a.txt").write_text("x", encoding="utf-8")
+                (smoke_root / "val_preprocessed_path" / "_SUCCESS").write_text("complete\n", encoding="utf-8")
                 status = preprocess_cache_status("smoke")
                 self.assertTrue(status["complete"])
                 self.assertFalse(status["partial"])
@@ -122,6 +125,7 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
                 (map_dir / "a.npy").write_text("x", encoding="utf-8")
                 (route_dir / "a.npy").write_text("x", encoding="utf-8")
                 (intention_dir / "a.txt").write_text("x", encoding="utf-8")
+                (smoke_root / "val_preprocessed_path" / "_SUCCESS").write_text("complete\n", encoding="utf-8")
                 argv = ["preprocess_validation_only.py", "--mode", "smoke"]
                 with patch.object(sys, "argv", argv):
                     with patch("scripts.preprocess_validation_only.ensure_upstream_exists", return_value=upstream_dir):

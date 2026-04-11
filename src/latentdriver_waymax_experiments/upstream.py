@@ -114,51 +114,143 @@ class _CRDPCompatModule:
 crdp = _crdp if _crdp is not None else _CRDPCompatModule()
 """
 
+PREPROCESS_DIR_CHECK_OLD_BLOCK = """        if os.path.exists(self.path_to_map):
+            raise ValueError(f'The map has been dumped in {self.path_to_map}, please delete the map first')
+        if os.path.exists(self.path_to_route):
+            raise ValueError(f'The route has been dumped in {self.path_to_route}, please delete the route first')
+        if os.path.exists(self.intention_label_path):
+            raise ValueError(f'The intention label has been dumped in {self.intention_label_path}, please delete the intention label first')
+
+        os.makedirs(self.path_to_map, exist_ok=True)
+        os.makedirs(self.path_to_route, exist_ok=True)
+        os.makedirs(self.intention_label_path, exist_ok=True)
+""".replace("\n\n", "\n        \n")
+
+PREPROCESS_DIR_CHECK_NEW_BLOCK = """        os.makedirs(self.path_to_map, exist_ok=True)
+        os.makedirs(self.path_to_route, exist_ok=True)
+        os.makedirs(self.intention_label_path, exist_ok=True)
+"""
+
 PREPROCESS_SCENARIO_OLD_BLOCK = """        cur_id = scen._scenario_id.reshape(-1)
-        
+
         # Extract map data
         road_obs, ids = get_whole_map(scen)
-        
+
         # Extract route data
         routes, ego_car_width = get_route_global(scen)
         routes = np.array(routes)
         ego_car_width = float(ego_car_width)
-        
+
         # Extract intention label data
         mask = scen.object_metadata.is_sdc
         sdc_xy = np.array(scen.log_trajectory.xy[mask, ...])
         yaw = np.array(scen.log_trajectory.yaw[mask, ...])
-"""
+""".replace("\n\n", "\n        \n")
 
-PREPROCESS_SCENARIO_NEW_BLOCK = """        cur_id = np.asarray(scen._scenario_id).reshape(-1)
-        
+PREPROCESS_SCENARIO_HOST_MATERIALIZED_BLOCK = """        cur_id = np.asarray(scen._scenario_id).reshape(-1)
+
         # Materialize JAX outputs on host before dispatching multiprocessing work.
         # Worker processes must only receive NumPy / Python values, never JAX device arrays.
         road_obs, ids = get_whole_map(scen)
         road_obs = np.asarray(road_obs)
         ids = np.asarray(ids)
-        
+
         # Extract route data
         routes, ego_car_width = get_route_global(scen)
         routes = np.asarray(routes)
         ego_car_width = float(np.asarray(ego_car_width))
-        
+
         # Extract intention label data
         mask = scen.object_metadata.is_sdc
         sdc_xy = np.asarray(scen.log_trajectory.xy[mask, ...])
         yaw = np.asarray(scen.log_trajectory.yaw[mask, ...])
-"""
+""".replace("\n\n", "\n        \n")
+
+PREPROCESS_SCENARIO_NEW_BLOCK = """        cur_id = np.asarray(scen._scenario_id).reshape(-1)
+
+        # Materialize JAX outputs on host before dispatching multiprocessing work.
+        # Worker processes must only receive NumPy / Python values, never JAX device arrays.
+        road_obs, ids = get_whole_map(scen)
+        road_obs = np.asarray(road_obs)
+        ids = np.asarray(ids)
+
+        # Extract route data
+        routes, ego_car_width = get_route_global(scen)
+        routes = np.asarray(routes)
+        ego_car_width = float(np.asarray(ego_car_width))
+
+        # Extract intention label data
+        mask = scen.object_metadata.is_sdc
+        sdc_xy = np.asarray(scen.log_trajectory.xy[mask, ...])
+        yaw = np.asarray(scen.log_trajectory.yaw[mask, ...])
+""".replace("\n\n", "\n        \n")
+
+PREPROCESS_TASKS_OLD_BLOCK = """        tasks = []
+        for bs in range(len(cur_id)):
+            tasks.append((
+                # Map data
+                road_obs[bs],
+                ids[bs],
+                self.data_conf.max_map_segments,
+                os.path.join(self.path_to_map, '{}'.format(cur_id[bs])),
+                # Route data
+                routes[bs:bs+1],
+                self.data_conf.max_route_segments,
+                ego_car_width,
+                os.path.join(self.path_to_route, '{}'.format(cur_id[bs])),
+                # Intention label data
+                sdc_xy[bs],
+                yaw[bs],
+                cur_id[bs],
+                self.intention_label_path
+            ))
+
+        return tasks
+""".replace("\n\n", "\n        \n")
+
+PREPROCESS_TASKS_NEW_BLOCK = """        tasks = []
+        skipped = 0
+        for bs in range(len(cur_id)):
+            scenario_id = cur_id[bs]
+            map_path = os.path.join(self.path_to_map, '{}'.format(scenario_id))
+            route_path = os.path.join(self.path_to_route, '{}'.format(scenario_id))
+            intention_path = os.path.join(self.intention_label_path, f'{scenario_id}.txt')
+            if all(os.path.exists(path) and os.path.getsize(path) > 0 for path in (map_path + '.npy', route_path + '.npy', intention_path)):
+                skipped += 1
+                continue
+            tasks.append((
+                # Map data
+                road_obs[bs],
+                ids[bs],
+                self.data_conf.max_map_segments,
+                map_path,
+                # Route data
+                routes[bs:bs+1],
+                self.data_conf.max_route_segments,
+                ego_car_width,
+                route_path,
+                # Intention label data
+                sdc_xy[bs],
+                yaw[bs],
+                scenario_id,
+                self.intention_label_path
+            ))
+        if skipped:
+            print(f\"Skipped existing preprocessed scenarios: {skipped}\")
+
+        return tasks
+""".replace("\n\n", "\n        \n")
 
 PREPROCESS_POOL_OLD_BLOCK = """        with mp.Pool(processes=mp.cpu_count()) as pool:
             for batch_id, scen in enumerate(self.data_iter):
                 t_start = time.time()
                 tasks = self._process_scenario(scen)
                 pool.starmap(workers, tasks)
-                
-                print(f\"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}\")
-"""
 
-PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIVER_PREPROCESS_START_METHOD', 'spawn')
+                print(f\"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}\")
+""".replace("\n\n", "\n                \n")
+
+PREPROCESS_POOL_START_METHOD_BLOCK = """        start_method = os.environ.get('LATENTDRIVER_PREPROCESS_START_METHOD', 'spawn')
         worker_count = max(1, int(os.environ.get('LATENTDRIVER_PREPROCESS_WORKERS', mp.cpu_count())))
         mp_ctx = mp.get_context(start_method)
         with mp_ctx.Pool(processes=worker_count) as pool:
@@ -166,9 +258,30 @@ PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIV
                 t_start = time.time()
                 tasks = self._process_scenario(scen)
                 pool.starmap(workers, tasks)
-                
+
                 print(f\"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}\")
-"""
+""".replace("\n\n", "\n                \n")
+
+PREPROCESS_POOL_NEW_BLOCK = """        start_method = os.environ.get('LATENTDRIVER_PREPROCESS_START_METHOD', 'spawn')
+        worker_count = max(1, int(os.environ.get('LATENTDRIVER_PREPROCESS_WORKERS', '1')))
+        if worker_count <= 1:
+            for batch_id, scen in enumerate(self.data_iter):
+                t_start = time.time()
+                tasks = self._process_scenario(scen)
+                for task in tasks:
+                    workers(*task)
+
+                print(f\"Processed; current batch is: {batch_id}; Tasks: {len(tasks)}; Using time is: {time.time() - t_start}\")
+            return
+        mp_ctx = mp.get_context(start_method)
+        with mp_ctx.Pool(processes=worker_count) as pool:
+            for batch_id, scen in enumerate(self.data_iter):
+                t_start = time.time()
+                tasks = self._process_scenario(scen)
+                pool.starmap(workers, tasks)
+
+                print(f\"Processed; current batch is: {batch_id}; Tasks: {len(tasks)}; Using time is: {time.time() - t_start}\")
+""".replace("\n\n", "\n                \n")
 
 
 MATPLOTLIB_IMG_FROM_FIG_OLD_BLOCK = """  fig.canvas.draw()
@@ -255,13 +368,18 @@ def ensure_python312_compat_sitecustomize(upstream_dir: Path) -> Path:
 
 
 def _replace_source_block(path: Path, old: str, new: str) -> str:
+    return _replace_source_block_candidates(path, (old,), new)
+
+
+def _replace_source_block_candidates(path: Path, old_candidates: tuple[str, ...], new: str) -> str:
     text = path.read_text(encoding="utf-8")
     if new in text:
         return "already_patched"
-    if old not in text:
-        return "not_found"
-    path.write_text(text.replace(old, new), encoding="utf-8")
-    return "patched"
+    for old in old_candidates:
+        if old in text:
+            path.write_text(text.replace(old, new), encoding="utf-8")
+            return "patched"
+    return "not_found"
 
 
 def ensure_lightning_compat_source_patches(upstream_dir: Path) -> Dict[str, str]:
@@ -297,14 +415,24 @@ def ensure_crdp_compat_source_patch(upstream_dir: Path) -> str:
 def ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir: Path) -> Dict[str, str]:
     preprocess_path = upstream_dir / "src" / "preprocess" / "preprocess_data.py"
     return {
-        "host_materialization": _replace_source_block(
+        "resume_dirs": _replace_source_block(
             preprocess_path,
-            PREPROCESS_SCENARIO_OLD_BLOCK,
+            PREPROCESS_DIR_CHECK_OLD_BLOCK,
+            PREPROCESS_DIR_CHECK_NEW_BLOCK,
+        ),
+        "host_materialization": _replace_source_block_candidates(
+            preprocess_path,
+            (PREPROCESS_SCENARIO_OLD_BLOCK, PREPROCESS_SCENARIO_HOST_MATERIALIZED_BLOCK),
             PREPROCESS_SCENARIO_NEW_BLOCK,
         ),
-        "safe_start_method": _replace_source_block(
+        "resume_tasks": _replace_source_block(
             preprocess_path,
-            PREPROCESS_POOL_OLD_BLOCK,
+            PREPROCESS_TASKS_OLD_BLOCK,
+            PREPROCESS_TASKS_NEW_BLOCK,
+        ),
+        "safe_start_method": _replace_source_block_candidates(
+            preprocess_path,
+            (PREPROCESS_POOL_OLD_BLOCK, PREPROCESS_POOL_START_METHOD_BLOCK),
             PREPROCESS_POOL_NEW_BLOCK,
         ),
     }

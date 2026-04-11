@@ -13,8 +13,10 @@ from latentdriver_waymax_experiments.upstream import (
     JAX_TREE_MAP_COMPAT_FILES,
     MATPLOTLIB_IMG_FROM_FIG_NEW_BLOCK,
     MODEL_LIGHTNING_NEW_IMPORT,
+    PREPROCESS_DIR_CHECK_NEW_BLOCK,
     PREPROCESS_POOL_NEW_BLOCK,
     PREPROCESS_SCENARIO_NEW_BLOCK,
+    PREPROCESS_TASKS_NEW_BLOCK,
     PYTHON312_SITE_CUSTOMIZE_BLOCK,
     UTILS_LIGHTNING_NEW_IMPORT,
     ensure_crdp_compat_source_patch,
@@ -86,18 +88,23 @@ class UpstreamCompatTests(unittest.TestCase):
             preprocess_dir.mkdir(parents=True, exist_ok=True)
             preprocess_path = preprocess_dir / "preprocess_data.py"
             preprocess_path.write_text(
-                """import numpy as np\nimport multiprocessing as mp\nimport os\nimport time\n\nclass Preprocessor:\n    def _process_scenario(self, scen):\n"""
+                """import numpy as np\nimport multiprocessing as mp\nimport os\nimport time\n\nclass Preprocessor:\n    def _check_and_create_dirs(self):\n        if os.path.exists(self.path_to_map):\n            raise ValueError(f'The map has been dumped in {self.path_to_map}, please delete the map first')\n        if os.path.exists(self.path_to_route):\n            raise ValueError(f'The route has been dumped in {self.path_to_route}, please delete the route first')\n        if os.path.exists(self.intention_label_path):\n            raise ValueError(f'The intention label has been dumped in {self.intention_label_path}, please delete the intention label first')\n        \n        os.makedirs(self.path_to_map, exist_ok=True)\n        os.makedirs(self.path_to_route, exist_ok=True)\n        os.makedirs(self.intention_label_path, exist_ok=True)\n\n    def _process_scenario(self, scen):\n"""
                 + """        cur_id = scen._scenario_id.reshape(-1)\n        \n        # Extract map data\n        road_obs, ids = get_whole_map(scen)\n        \n        # Extract route data\n        routes, ego_car_width = get_route_global(scen)\n        routes = np.array(routes)\n        ego_car_width = float(ego_car_width)\n        \n        # Extract intention label data\n        mask = scen.object_metadata.is_sdc\n        sdc_xy = np.array(scen.log_trajectory.xy[mask, ...])\n        yaw = np.array(scen.log_trajectory.yaw[mask, ...])\n\n"""
+                + """        tasks = []\n        for bs in range(len(cur_id)):\n            tasks.append((\n                # Map data\n                road_obs[bs],\n                ids[bs],\n                self.data_conf.max_map_segments,\n                os.path.join(self.path_to_map, \x27{}\x27.format(cur_id[bs])),\n                # Route data\n                routes[bs:bs+1],\n                self.data_conf.max_route_segments,\n                ego_car_width,\n                os.path.join(self.path_to_route, \x27{}\x27.format(cur_id[bs])),\n                # Intention label data\n                sdc_xy[bs],\n                yaw[bs],\n                cur_id[bs],\n                self.intention_label_path\n            ))\n        \n        return tasks\n\n"""
                 + """    def run(self):\n        with mp.Pool(processes=mp.cpu_count()) as pool:\n            for batch_id, scen in enumerate(self.data_iter):\n                t_start = time.time()\n                tasks = self._process_scenario(scen)\n                pool.starmap(workers, tasks)\n                \n                print(f"Processed; current batch is: {batch_id}; Using time is: {time.time() - t_start}")\n""",
                 encoding="utf-8",
             )
 
             result = ensure_preprocess_multiprocessing_compat_source_patch(upstream_dir)
 
+            self.assertEqual(result["resume_dirs"], "patched")
             self.assertEqual(result["host_materialization"], "patched")
+            self.assertEqual(result["resume_tasks"], "patched")
             self.assertEqual(result["safe_start_method"], "patched")
             rewritten = preprocess_path.read_text(encoding="utf-8")
+            self.assertIn(PREPROCESS_DIR_CHECK_NEW_BLOCK, rewritten)
             self.assertIn(PREPROCESS_SCENARIO_NEW_BLOCK, rewritten)
+            self.assertIn(PREPROCESS_TASKS_NEW_BLOCK, rewritten)
             self.assertIn(PREPROCESS_POOL_NEW_BLOCK, rewritten)
 
     def test_ensure_jax_tree_map_compat_source_patch_rewrites_runtime_files(self) -> None:
