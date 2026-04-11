@@ -153,6 +153,7 @@ This launches a small NuBoard-inspired Bokeh app with three tabs:
 
 - assets + checkpoints: [`notebooks/latentdriver_assets_colab.ipynb`](./notebooks/latentdriver_assets_colab.ipynb)
 - validation preprocessing: [`notebooks/latentdriver_preprocess_val_colab.ipynb`](./notebooks/latentdriver_preprocess_val_colab.ipynb) (supports both Drive-local WOMD roots and authenticated GCS-backed WOMD access)
+- full validation evaluation dry-run: [`notebooks/latentdriver_full_eval_colab.ipynb`](./notebooks/latentdriver_full_eval_colab.ipynb)
 - public checkpoint evaluation: [`notebooks/latentdriver_public_eval_colab.ipynb`](./notebooks/latentdriver_public_eval_colab.ipynb)
 - visualization: [`notebooks/latentdriver_visualize_colab.ipynb`](./notebooks/latentdriver_visualize_colab.ipynb)
 
