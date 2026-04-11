@@ -38,13 +38,15 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/prepare_smoke_subset.py`](./scripts/prepare_smoke_subset.py): build a one-shard validation smoke subset from raw WOMD validation TFRecords.
 - [`scripts/stage_womd_validation_shard.py`](./scripts/stage_womd_validation_shard.py): copy one validation shard from authenticated WOMD GCS storage into a local Drive-backed staging root for smoke preprocessing.
 - [`scripts/preprocess_validation_only.py`](./scripts/preprocess_validation_only.py): run validation-only preprocessing for smoke or full validation.
+- [`scripts/colab_canary.py`](./scripts/colab_canary.py): CLI-first Colab runner that executes named profiles and writes Drive-backed debug bundles.
 - [`scripts/run_waymax_eval.py`](./scripts/run_waymax_eval.py): run a standardized Waymax evaluation for one released checkpoint.
 - [`scripts/run_smoke_eval.py`](./scripts/run_smoke_eval.py): quick smoke evaluation on the one-shard subset.
 - [`scripts/run_public_suite.py`](./scripts/run_public_suite.py): evaluate all released checkpoints under one standardized tier and write a suite summary.
 - [`scripts/plot_model_metrics.py`](./scripts/plot_model_metrics.py): generate static PNG/CSV/JSON plots comparing completed model metrics.
 - [`scripts/run_visualization.py`](./scripts/run_visualization.py): run one visualization job and capture generated MP4/PDF artifacts.
 - [`scripts/run_waymax_board.py`](./scripts/run_waymax_board.py): launch a NuBoard-inspired local Bokeh app for browsing Waymax run bundles, metrics, and visualization artifacts.
-- [`notebooks/`](./notebooks): Colab notebooks for assets, preprocessing, public-eval suite, and visualization.
+- [`notebooks/latentdriver_colab_runner.ipynb`](./notebooks/latentdriver_colab_runner.ipynb): recommended single Colab notebook for bootstrap, Drive binding, profile selection, and CLI execution.
+- [`notebooks/`](./notebooks): legacy task-specific Colab notebooks are retained for reference, but the runner notebook should be the default workflow.
 
 ## Evaluation Contract
 
@@ -151,8 +153,37 @@ This launches a small NuBoard-inspired Bokeh app with three tabs:
 
 ## Colab Path
 
+Use one notebook as the Colab terminal launcher:
+
+- recommended runner: [`notebooks/latentdriver_colab_runner.ipynb`](./notebooks/latentdriver_colab_runner.ipynb)
+
+The runner clones or fast-forwards `main`, mounts Drive, binds the persistent artifact layout, sets the WOMD GCS root, and delegates execution to:
+
+```bash
+python3 scripts/colab_canary.py --profile full-eval-dry-run --auto-install-runtime
+```
+
+Useful profiles:
+
+- `full-preprocess-status`: verify full preprocessing paths without scanning the large Drive cache directories.
+- `full-eval-dry-run`: validate full evaluation command construction and required inputs without launching simulation.
+- `full-eval-reactive-single`: run one model on full reactive evaluation.
+- `full-eval-reactive`: run all public checkpoints on full reactive evaluation.
+- `full-eval-non-reactive`: run all public checkpoints on full non-reactive evaluation.
+- `plot-full-reactive`: generate comparison plots after full reactive runs exist.
+
+Debug bundles are written under the Drive-bound project root:
+
+```text
+/content/drive/MyDrive/waymax_research/latentdriver_waymax_experiments/debug_runs/<timestamp>_<profile>/
+```
+
+Each bundle contains `manifest.json`, runtime context, artifact status snapshots, and per-step stdout/stderr logs. Pull them locally with `rclone` instead of pasting tracebacks manually.
+
+Legacy task-specific notebooks remain available for reference:
+
 - assets + checkpoints: [`notebooks/latentdriver_assets_colab.ipynb`](./notebooks/latentdriver_assets_colab.ipynb)
-- validation preprocessing: [`notebooks/latentdriver_preprocess_val_colab.ipynb`](./notebooks/latentdriver_preprocess_val_colab.ipynb) (supports both Drive-local WOMD roots and authenticated GCS-backed WOMD access)
+- validation preprocessing: [`notebooks/latentdriver_preprocess_val_colab.ipynb`](./notebooks/latentdriver_preprocess_val_colab.ipynb)
 - full validation evaluation dry-run: [`notebooks/latentdriver_full_eval_colab.ipynb`](./notebooks/latentdriver_full_eval_colab.ipynb)
 - public checkpoint evaluation: [`notebooks/latentdriver_public_eval_colab.ipynb`](./notebooks/latentdriver_public_eval_colab.ipynb)
 - visualization: [`notebooks/latentdriver_visualize_colab.ipynb`](./notebooks/latentdriver_visualize_colab.ipynb)
