@@ -39,6 +39,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/stage_womd_validation_shard.py`](./scripts/stage_womd_validation_shard.py): copy one validation shard from authenticated WOMD GCS storage into a local Drive-backed staging root for smoke preprocessing.
 - [`scripts/preprocess_validation_only.py`](./scripts/preprocess_validation_only.py): run validation-only preprocessing for smoke or full validation.
 - [`scripts/colab_canary.py`](./scripts/colab_canary.py): CLI-first Colab runner that executes named profiles and writes Drive-backed debug bundles.
+- [`scripts/pull_latest_debug.py`](./scripts/pull_latest_debug.py): local rclone helper for pulling the latest Colab debug bundle or latest failure bundle from Drive.
 - [`scripts/run_waymax_eval.py`](./scripts/run_waymax_eval.py): run a standardized Waymax evaluation for one released checkpoint.
 - [`scripts/run_smoke_eval.py`](./scripts/run_smoke_eval.py): quick smoke evaluation on the one-shard subset.
 - [`scripts/run_public_suite.py`](./scripts/run_public_suite.py): evaluate all released checkpoints under one standardized tier and write a suite summary.
@@ -179,6 +180,22 @@ Debug bundles are written under the Drive-bound project root:
 ```
 
 Each bundle contains `manifest.json`, runtime context, artifact status snapshots, and per-step stdout/stderr logs. Pull them locally with `rclone` instead of pasting tracebacks manually.
+
+Stable debug aliases are also maintained:
+
+```text
+debug_runs/latest/
+debug_runs/latest_failure/
+debug_runs/LATEST.json
+debug_runs/LATEST_FAILURE.json
+debug_runs/RUN_LEDGER.jsonl
+```
+
+The timestamped bundles are retained for history; `latest/` and `latest_failure/` are overwritten as convenience aliases. To pull the latest failure locally:
+
+```bash
+python3 scripts/pull_latest_debug.py --which latest_failure
+```
 
 Legacy task-specific notebooks remain available for reference:
 

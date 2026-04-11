@@ -24,6 +24,14 @@ visualize-smoke
 
 Legacy task-specific notebooks remain available for reference, but the runner notebook should be the default path:
 
+Debug handoff:
+
+```bash
+python3 scripts/pull_latest_debug.py --which latest_failure
+```
+
+The helper pulls `debug_runs/LATEST_FAILURE.json` and `debug_runs/latest_failure/` from the Drive-backed project folder via the configured `gdrive_ro` rclone remote.
+
 - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/achyutmorang/latentdriver-waymax-experiments/blob/main/notebooks/latentdriver_assets_colab.ipynb) `latentdriver_assets_colab.ipynb`: clone/sync repo, mount Drive, patch upstream, download public evaluation checkpoints.
 - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/achyutmorang/latentdriver-waymax-experiments/blob/main/notebooks/latentdriver_preprocess_val_colab.ipynb) `latentdriver_preprocess_val_colab.ipynb`: prepare smoke or full validation preprocessing artifacts from WOMD validation data, using either a Drive-local dataset root or authenticated GCS access.
 - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/achyutmorang/latentdriver-waymax-experiments/blob/main/notebooks/latentdriver_full_eval_colab.ipynb) `latentdriver_full_eval_colab.ipynb`: older full-eval dry-run wrapper, retained for reference.

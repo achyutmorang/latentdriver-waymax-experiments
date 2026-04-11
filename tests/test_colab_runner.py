@@ -4,12 +4,14 @@ import os
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.colab_runner import (  # noqa: E402
+    RunnerStep,
     available_profiles,
     collect_artifact_status,
     profile_steps,
@@ -58,6 +60,10 @@ class ColabRunnerTests(unittest.TestCase):
             self.assertTrue((bundle_dir / "manifest.json").is_file())
             self.assertTrue((bundle_dir / "artifact_status_before.json").is_file())
             self.assertTrue((bundle_dir / "artifact_status_after.json").is_file())
+            self.assertTrue((Path(td) / "latest" / "manifest.json").is_file())
+            self.assertTrue((Path(td) / "latest" / "ALIAS.json").is_file())
+            self.assertTrue((Path(td) / "LATEST.json").is_file())
+            self.assertTrue((Path(td) / "RUN_LEDGER.jsonl").is_file())
 
     def test_env_check_profile_executes_and_writes_after_status(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -66,6 +72,26 @@ class ColabRunnerTests(unittest.TestCase):
             self.assertEqual(payload["status"], "succeeded")
             self.assertEqual(payload["step_results"], [])
             self.assertTrue((bundle_dir / "artifact_status_after.json").is_file())
+
+    def test_failed_profile_updates_latest_failure_alias_and_pointer(self) -> None:
+        failed_step = RunnerStep(
+            name="forced_failure",
+            command=(sys.executable, "-c", "import sys; print('forced failure'); sys.exit(3)"),
+            description="Deliberately fail for debug alias testing.",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            with patch("latentdriver_waymax_experiments.colab_runner.profile_steps", return_value=[failed_step]):
+                payload = run_profile("env-check", debug_root=td)
+            debug_root = Path(td)
+            self.assertEqual(payload["status"], "failed")
+            self.assertTrue((debug_root / "latest_failure" / "manifest.json").is_file())
+            self.assertTrue((debug_root / "latest_failure" / "ALIAS.json").is_file())
+            self.assertTrue((debug_root / "LATEST_FAILURE.json").is_file())
+            pointer = json.loads((debug_root / "LATEST_FAILURE.json").read_text(encoding="utf-8"))
+            self.assertEqual(pointer["run_id"], payload["run_id"])
+            ledger_rows = (debug_root / "RUN_LEDGER.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(ledger_rows), 1)
+            self.assertEqual(json.loads(ledger_rows[0])["failed_step"], "forced_failure")
 
 
 if __name__ == "__main__":

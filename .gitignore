@@ -15,4 +15,6 @@ artifacts/locks/*
 !artifacts/locks/.gitkeep
 results/runs/*
 !results/runs/.gitkeep
+results/debug_runs/*
+!results/debug_runs/.gitkeep
 external/LatentDriver/

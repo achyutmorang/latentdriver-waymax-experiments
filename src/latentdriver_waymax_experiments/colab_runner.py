@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -507,6 +508,71 @@ def _create_debug_bundle(profile: str, debug_root: Path) -> dict[str, Path | str
     }
 
 
+def _pointer_payload(*, manifest: Mapping[str, Any], alias_dir: Path | None = None) -> dict[str, Any]:
+    payload = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": manifest.get("run_id"),
+        "profile": manifest.get("profile"),
+        "status": manifest.get("status"),
+        "bundle_dir": manifest.get("bundle_dir"),
+        "manifest_path": str(Path(str(manifest.get("bundle_dir"))) / "manifest.json") if manifest.get("bundle_dir") else None,
+        "failure_summary_path": manifest.get("failure_summary_path"),
+    }
+    if alias_dir is not None:
+        payload["alias_dir"] = str(alias_dir)
+    return payload
+
+
+def _replace_directory_copy(source: Path, target: Path) -> None:
+    if source.resolve() == target.resolve():
+        return
+    tmp = target.with_name(f".{target.name}.tmp")
+    for path in (tmp, target):
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            shutil.rmtree(path)
+    shutil.copytree(source, tmp)
+    tmp.rename(target)
+
+
+def _append_run_ledger(debug_root: Path, manifest: Mapping[str, Any]) -> None:
+    ledger_path = debug_root / "RUN_LEDGER.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    row = _pointer_payload(manifest=manifest)
+    row["model"] = manifest.get("model")
+    row["seed"] = manifest.get("seed")
+    row["vis"] = manifest.get("vis")
+    row["started_at"] = manifest.get("started_at")
+    row["finished_at"] = manifest.get("finished_at")
+    row["step_count"] = len(manifest.get("steps", [])) if isinstance(manifest.get("steps"), list) else None
+    row["failed_step"] = None
+    for result in manifest.get("step_results", []):
+        if isinstance(result, dict) and result.get("returncode") != 0:
+            row["failed_step"] = result.get("name")
+            break
+    with ledger_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _refresh_debug_aliases(debug_root: Path, bundle_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
+    latest_dir = debug_root / "latest"
+    _replace_directory_copy(bundle_dir, latest_dir)
+    latest_pointer = _pointer_payload(manifest=manifest, alias_dir=latest_dir)
+    write_json(latest_dir / "ALIAS.json", latest_pointer)
+    write_json(debug_root / "LATEST.json", latest_pointer)
+    alias_payload: dict[str, Any] = {"latest": latest_pointer}
+    if manifest.get("status") == "failed":
+        latest_failure_dir = debug_root / "latest_failure"
+        _replace_directory_copy(bundle_dir, latest_failure_dir)
+        latest_failure_pointer = _pointer_payload(manifest=manifest, alias_dir=latest_failure_dir)
+        write_json(latest_failure_dir / "ALIAS.json", latest_failure_pointer)
+        write_json(debug_root / "LATEST_FAILURE.json", latest_failure_pointer)
+        alias_payload["latest_failure"] = latest_failure_pointer
+    _append_run_ledger(debug_root, manifest)
+    return alias_payload
+
+
 def _tail_text(value: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
     stripped = value.strip()
     if not stripped:
@@ -591,7 +657,8 @@ def run_profile(
 ) -> dict[str, Any]:
     _validate_profile(profile)
     cwd = resolve_repo_relative("")
-    bundle = _create_debug_bundle(profile, resolve_debug_root(debug_root))
+    resolved_debug_root = resolve_debug_root(debug_root)
+    bundle = _create_debug_bundle(profile, resolved_debug_root)
     bundle_dir = Path(bundle["bundle_dir"])
     steps_dir = Path(bundle["steps_dir"])
     steps = profile_steps(
@@ -634,6 +701,7 @@ def run_profile(
     if dry_run:
         write_json(Path(bundle["artifact_status_after_path"]), artifact_status_before)
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["debug_aliases"] = _refresh_debug_aliases(resolved_debug_root, bundle_dir, manifest)
         write_json(Path(bundle["manifest_path"]), manifest)
         return manifest
 
@@ -664,5 +732,6 @@ def run_profile(
         manifest["failure_summary_path"] = str(bundle["failure_summary_path"])
     else:
         manifest["status"] = "succeeded"
+    manifest["debug_aliases"] = _refresh_debug_aliases(resolved_debug_root, bundle_dir, manifest)
     write_json(Path(bundle["manifest_path"]), manifest)
     return manifest
