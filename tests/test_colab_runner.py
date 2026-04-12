@@ -28,6 +28,7 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("full-eval-dry-run", profiles)
         self.assertIn("full-preprocess-status", profiles)
         self.assertIn("bootstrap-session", profiles)
+        self.assertIn("stage-full-womd-validation", profiles)
 
     def test_full_preprocess_status_has_no_heavy_steps_by_default(self) -> None:
         self.assertEqual(profile_steps("full-preprocess-status"), [])
@@ -39,6 +40,34 @@ class ColabRunnerTests(unittest.TestCase):
     def test_install_runtime_bootstraps_upstream_first(self) -> None:
         steps = profile_steps("full-eval-reactive-single", install_runtime=True)
         self.assertEqual([step.name for step in steps[:2]], ["bootstrap_upstream", "setup_colab_runtime"])
+        self.assertEqual(steps[2].name, "preflight_full_reactive_latentdriver_t2_j3")
+
+    def test_full_eval_profiles_preflight_inputs_before_model_launch(self) -> None:
+        steps = profile_steps("full-eval-reactive-single")
+        self.assertEqual(
+            [step.name for step in steps],
+            ["bootstrap_upstream", "preflight_full_reactive_latentdriver_t2_j3", "full_eval_reactive_single"],
+        )
+
+    def test_full_eval_suite_preflights_all_public_checkpoints(self) -> None:
+        steps = profile_steps("full-eval-reactive")
+        preflights = [step.name for step in steps if step.name.startswith("preflight_full_reactive_")]
+        self.assertEqual(
+            preflights,
+            [
+                "preflight_full_reactive_latentdriver_t2_j3",
+                "preflight_full_reactive_latentdriver_t2_j4",
+                "preflight_full_reactive_plant",
+                "preflight_full_reactive_easychauffeur_ppo",
+            ],
+        )
+
+    def test_stage_full_womd_validation_profile_uses_drive_bound_raw_cache(self) -> None:
+        steps = profile_steps("stage-full-womd-validation")
+        self.assertEqual([step.name for step in steps], ["stage_full_womd_validation"])
+        command = " ".join(steps[0].command)
+        self.assertIn("scripts/stage_womd_validation_shards.py", command)
+        self.assertIn("--staging-root artifacts/assets/raw_womd", command)
 
     def test_bootstrap_session_runs_full_setup_sequence(self) -> None:
         steps = profile_steps("bootstrap-session")
@@ -51,6 +80,7 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("full-eval-dry-run"))
         self.assertFalse(should_install_runtime_by_default("plot-smoke-reactive"))
         self.assertFalse(should_install_runtime_by_default("bootstrap-session"))
+        self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
         self.assertTrue(should_install_runtime_by_default("full-eval-reactive"))
 
     def test_resolve_debug_root_uses_drive_project_sibling_of_results_runs(self) -> None:

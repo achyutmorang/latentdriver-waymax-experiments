@@ -17,7 +17,7 @@ from typing import Any, Iterable, Mapping, TextIO
 
 from .artifacts import write_json
 from .config import load_config, resolve_repo_relative
-from .womd import local_dataset_uri_exists, resolve_dataset_uri, waymo_dataset_root_value
+from .womd import WOMD_VERSION, dataset_uri_status, is_gcs_uri, resolve_dataset_uri, waymo_dataset_root_value
 
 DEFAULT_MODEL = "latentdriver_t2_j3"
 DEFAULT_SEED = 0
@@ -26,6 +26,7 @@ NO_RUNTIME_SETUP_PROFILES = {
     "bootstrap-session",
     "env-check",
     "download-checkpoints",
+    "stage-full-womd-validation",
     "full-preprocess-status",
     "full-eval-dry-run",
     "plot-smoke-reactive",
@@ -70,6 +71,7 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "env-check": "Capture environment, git, GPU, and artifact status without running heavy commands.",
     "install-runtime": "Install/patch the Colab runtime and editable project package.",
     "download-checkpoints": "Download or verify public evaluation checkpoints into the Drive-bound checkpoint cache.",
+    "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
     "smoke-preprocess": "Run the smoke validation preprocessing command.",
     "smoke-eval-reactive": "Run all public checkpoints on smoke_reactive.",
     "smoke-eval-non-reactive": "Run all public checkpoints on smoke_non_reactive.",
@@ -103,6 +105,33 @@ def _bootstrap_upstream_step() -> RunnerStep:
         command=_script_command("scripts/bootstrap_upstream.py"),
         description="Clone or refresh the pinned LatentDriver upstream fork and apply the local patch layer.",
     )
+
+
+def _full_eval_preflight_step(*, model: str, tier: str) -> RunnerStep:
+    return RunnerStep(
+        name=f"preflight_{tier}_{model}",
+        command=_script_command(
+            "scripts/check_eval_inputs.py",
+            "--model",
+            model,
+            "--tier",
+            tier,
+            "--verify-remote-read",
+        ),
+        description=f"Fail fast if {tier} raw WOMD, checkpoint, or full preprocess inputs are not ready.",
+    )
+
+
+def _full_eval_suite_preflight_steps(*, tier: str) -> list[RunnerStep]:
+    models = [name for name, spec in load_config()["checkpoints"].items() if spec.get("method")]
+    return [_full_eval_preflight_step(model=model, tier=tier) for model in models]
+
+
+def _stage_full_womd_gcs_root() -> str:
+    configured_root = os.environ.get("LATENTDRIVER_WAYMO_DATASET_ROOT", "").strip()
+    if configured_root and is_gcs_uri(configured_root):
+        return configured_root
+    return f"gs://{WOMD_VERSION}"
 
 
 def should_install_runtime_by_default(profile: str) -> bool:
@@ -167,6 +196,21 @@ def profile_steps(
                 name="download_checkpoints",
                 command=_script_command("scripts/download_checkpoints.py", "--evaluation-only"),
                 description="Download released evaluation checkpoints.",
+            ),
+        ]
+    if profile == "stage-full-womd-validation":
+        return [
+            *steps,
+            RunnerStep(
+                name="stage_full_womd_validation",
+                command=_script_command(
+                    "scripts/stage_womd_validation_shards.py",
+                    "--gcs-root",
+                    _stage_full_womd_gcs_root(),
+                    "--staging-root",
+                    "artifacts/assets/raw_womd",
+                ),
+                description="Stage all 150 full validation WOMD shards into the Drive-bound raw_womd cache.",
             ),
         ]
     if profile == "smoke-preprocess":
@@ -236,6 +280,7 @@ def profile_steps(
     if profile == "full-eval-reactive-single":
         return [
             *steps,
+            _full_eval_preflight_step(model=model, tier="full_reactive"),
             RunnerStep(
                 name="full_eval_reactive_single",
                 command=_script_command("scripts/run_waymax_eval.py", "--model", model, "--tier", "full_reactive", "--seed", seed),
@@ -245,6 +290,7 @@ def profile_steps(
     if profile == "full-eval-non-reactive-single":
         return [
             *steps,
+            _full_eval_preflight_step(model=model, tier="full_non_reactive"),
             RunnerStep(
                 name="full_eval_non_reactive_single",
                 command=_script_command("scripts/run_waymax_eval.py", "--model", model, "--tier", "full_non_reactive", "--seed", seed),
@@ -254,6 +300,7 @@ def profile_steps(
     if profile == "full-eval-reactive":
         return [
             *steps,
+            *_full_eval_suite_preflight_steps(tier="full_reactive"),
             RunnerStep(
                 name="full_eval_reactive_suite",
                 command=_script_command("scripts/run_public_suite.py", "--tier", "full_reactive", "--seed", seed),
@@ -263,6 +310,7 @@ def profile_steps(
     if profile == "full-eval-non-reactive":
         return [
             *steps,
+            *_full_eval_suite_preflight_steps(tier="full_non_reactive"),
             RunnerStep(
                 name="full_eval_non_reactive_suite",
                 command=_script_command("scripts/run_public_suite.py", "--tier", "full_non_reactive", "--seed", seed),
@@ -389,10 +437,11 @@ def _dataset_status(mode: str) -> dict[str, Any]:
     else:
         raise ValueError(f"Unsupported mode={mode!r}")
     try:
-        exists_or_remote = local_dataset_uri_exists(str(uri))
+        status = dataset_uri_status(str(uri))
     except Exception as exc:
         return {"mode": mode, "uri": str(uri), "error": f"{type(exc).__name__}: {exc}"}
-    return {"mode": mode, "uri": str(uri), "exists_or_remote": exists_or_remote}
+    status["mode"] = mode
+    return status
 
 
 def _preprocess_status(mode: str) -> dict[str, Any]:

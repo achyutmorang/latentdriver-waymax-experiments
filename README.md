@@ -37,7 +37,9 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/download_checkpoints.py`](./scripts/download_checkpoints.py): fetch released checkpoints from Hugging Face.
 - [`scripts/prepare_smoke_subset.py`](./scripts/prepare_smoke_subset.py): build a one-shard validation smoke subset from raw WOMD validation TFRecords.
 - [`scripts/stage_womd_validation_shard.py`](./scripts/stage_womd_validation_shard.py): copy one validation shard from authenticated WOMD GCS storage into a local Drive-backed staging root for smoke preprocessing.
+- [`scripts/stage_womd_validation_shards.py`](./scripts/stage_womd_validation_shards.py): resumably copy full validation shards from authenticated WOMD GCS storage into the Drive-backed raw WOMD cache.
 - [`scripts/preprocess_validation_only.py`](./scripts/preprocess_validation_only.py): run validation-only preprocessing for smoke or full validation.
+- [`scripts/check_eval_inputs.py`](./scripts/check_eval_inputs.py): fail-fast preflight for checkpoint, raw WOMD, and preprocessing readiness before a full eval run.
 - [`scripts/colab_bootstrap.py`](./scripts/colab_bootstrap.py): shell-invoked Colab bootstrapper for existing Drive mount validation, clone/pull, and persistent artifact/debug binding.
 - [`scripts/colab_canary.py`](./scripts/colab_canary.py): CLI-first Colab runner that executes named profiles and writes Drive-backed debug bundles.
 - [`scripts/pull_latest_debug.py`](./scripts/pull_latest_debug.py): local rclone helper for pulling the latest Colab debug bundle or latest failure bundle from Drive.
@@ -174,11 +176,34 @@ Full-eval batch dimensions are hardware-adaptive: the config keeps the multi-dev
 Useful profiles:
 
 - `full-preprocess-status`: verify full preprocessing paths without scanning the large Drive cache directories.
+- `stage-full-womd-validation`: stage all 150 full validation WOMD TFRecord shards into the Drive-backed `assets/raw_womd` cache.
 - `full-eval-dry-run`: validate full evaluation command construction and required inputs without launching simulation.
 - `full-eval-reactive-single`: run one model on full reactive evaluation.
 - `full-eval-reactive`: run all public checkpoints on full reactive evaluation.
 - `full-eval-non-reactive`: run all public checkpoints on full non-reactive evaluation.
 - `plot-full-reactive`: generate comparison plots after full reactive runs exist.
+
+Full evaluation has two hard readiness gates:
+
+- the raw WOMD source must be complete and readable by the runtime;
+- full preprocessing must have written `val_preprocessed_path/_SUCCESS` and `val_preprocessed_path/preprocess_manifest.json`.
+
+If TensorFlow reports anonymous GCS access for `gs://waymo_open_dataset_motion_v_1_1_0`, use the durable Drive-local path instead:
+
+```bash
+python3 scripts/colab_canary.py \
+  --profile stage-full-womd-validation \
+  --waymo-dataset-root gs://waymo_open_dataset_motion_v_1_1_0
+
+python3 scripts/colab_canary.py \
+  --profile full-eval-reactive-single \
+  --model latentdriver_t2_j3 \
+  --seed 0 \
+  --auto-install-runtime \
+  --waymo-dataset-root /content/latentdriver-waymax-experiments/artifacts/assets/raw_womd
+```
+
+The staging profile skips existing non-empty shards, so it is safe to rerun after Colab disconnects. It must finish all 150 validation shards before `full_reactive` or `full_non_reactive` is a scientifically valid full evaluation.
 
 Debug bundles are written under the Drive-bound project root:
 

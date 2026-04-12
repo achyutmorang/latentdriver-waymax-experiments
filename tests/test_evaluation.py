@@ -88,6 +88,77 @@ class EvaluationTests(unittest.TestCase):
             cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
         self.assertIn("++batch_dims=[7,125]", " ".join(cmd))
 
+    def test_full_eval_verify_requires_complete_local_raw_shards_and_preprocess_marker(self) -> None:
+        from latentdriver_waymax_experiments.evaluation import _verify_inputs
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ckpt = root / "model.ckpt"
+            ckpt.write_bytes(b"ckpt")
+            raw = root / "raw" / "validation_tfexample.tfrecord@2"
+            raw.parent.mkdir(parents=True)
+            (raw.parent / "validation_tfexample.tfrecord-00000-of-00002").write_bytes(b"first")
+            preprocess = root / "preprocessed" / "val_preprocessed_path"
+            intention = root / "preprocessed" / "val_intention_label"
+            (preprocess / "map").mkdir(parents=True)
+            (preprocess / "route").mkdir(parents=True)
+            intention.mkdir(parents=True)
+            with patch(
+                "latentdriver_waymax_experiments.evaluation.load_config",
+                return_value={"evaluation": {"tiers": {"full_reactive": {"dataset_mode": "full"}}}},
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation._validation_inputs",
+                return_value={"waymo_path": str(raw), "preprocess_path": preprocess, "intention_path": intention},
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation.checkpoint_path",
+                return_value=ckpt,
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation.ensure_upstream_exists",
+                return_value=root,
+            ):
+                missing = _verify_inputs("latentdriver_t2_j3", "full_reactive")
+        self.assertIn("waymo_path", missing)
+        self.assertIn("preprocess_completion", missing)
+        self.assertIn("_SUCCESS", missing["preprocess_completion"])
+
+    def test_full_eval_verify_reports_tensorflow_gcs_read_failure(self) -> None:
+        from latentdriver_waymax_experiments.evaluation import _verify_inputs
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ckpt = root / "model.ckpt"
+            ckpt.write_bytes(b"ckpt")
+            preprocess = root / "preprocessed" / "val_preprocessed_path"
+            intention = root / "preprocessed" / "val_intention_label"
+            (preprocess / "map").mkdir(parents=True)
+            (preprocess / "route").mkdir(parents=True)
+            intention.mkdir(parents=True)
+            (preprocess / "_SUCCESS").write_text("complete\n", encoding="utf-8")
+            (preprocess / "preprocess_manifest.json").write_text("{}", encoding="utf-8")
+            with patch(
+                "latentdriver_waymax_experiments.evaluation.load_config",
+                return_value={"evaluation": {"tiers": {"full_reactive": {"dataset_mode": "full"}}}},
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation._validation_inputs",
+                return_value={
+                    "waymo_path": "gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150",
+                    "preprocess_path": preprocess,
+                    "intention_path": intention,
+                },
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation.checkpoint_path",
+                return_value=ckpt,
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation.ensure_upstream_exists",
+                return_value=root,
+            ), patch(
+                "latentdriver_waymax_experiments.evaluation.probe_tensorflow_dataset_uri",
+                return_value={"ok": False, "error": "403 anonymous"},
+            ):
+                missing = _verify_inputs("latentdriver_t2_j3", "full_reactive", verify_remote_reads=True)
+        self.assertIn("waymo_path_gcs_read", missing)
+        self.assertIn("403 anonymous", missing["waymo_path_gcs_read"])
+
     def test_flatten_metrics_maps_expected_keys(self) -> None:
         payload = {
             "average": {
@@ -114,6 +185,29 @@ class EvaluationTests(unittest.TestCase):
                 suite = run_public_suite(tier="smoke_reactive", dry_run=True)
         self.assertEqual(suite["tier"], "smoke_reactive")
         self.assertGreaterEqual(len(suite["runs"]), 4)
+
+    def test_run_waymax_eval_cli_returns_nonzero_when_dry_run_not_ready(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from scripts import run_waymax_eval as run_script
+
+        cfg = {
+            "checkpoints": {"latentdriver_t2_j3": {}},
+            "evaluation": {"tiers": {"full_reactive": {}}},
+        }
+        argv = [
+            "run_waymax_eval.py",
+            "--model",
+            "latentdriver_t2_j3",
+            "--tier",
+            "full_reactive",
+            "--dry-run",
+        ]
+        with patch.object(sys, "argv", argv), patch.object(run_script, "load_config", return_value=cfg), patch.object(
+            run_script,
+            "run_eval",
+            return_value={"ready": False},
+        ):
+            self.assertEqual(run_script.main(), 1)
 
     def test_run_eval_failure_includes_stderr_tail(self) -> None:
         from latentdriver_waymax_experiments.evaluation import run_eval

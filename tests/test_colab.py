@@ -63,6 +63,9 @@ class ColabBindingTests(unittest.TestCase):
             self.assertTrue(debug_target.is_symlink())
             self.assertEqual(debug_target.resolve(), Path(binding["debug_runs"]).resolve())
             self.assertEqual(Path(binding["debug_runs"]), root / "waymax_research" / "latentdriver_waymax_experiments" / "debug_runs")
+            raw_womd_target = repo_root / "artifacts" / "assets" / "raw_womd"
+            self.assertTrue(raw_womd_target.is_symlink())
+            self.assertEqual(raw_womd_target.resolve(), Path(binding["raw_womd"]).resolve())
 
 
 if __name__ == "__main__":

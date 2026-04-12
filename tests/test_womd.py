@@ -12,11 +12,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from latentdriver_waymax_experiments.womd import (
     WOMD_VERSION,
     copy_gcs_to_local,
+    dataset_uri_status,
+    first_sharded_tfrecord_uri,
     first_sharded_tfrecord_path,
     is_gcs_uri,
+    local_dataset_uri_complete,
     local_dataset_uri_exists,
     probe_gcs_uri,
     resolve_dataset_uri,
+    sharded_tfrecord_uri,
     validation_shard_uri,
     waymo_dataset_root,
 )
@@ -43,11 +47,40 @@ class WomdPathTests(unittest.TestCase):
         path = first_sharded_tfrecord_path(dataset_uri)
         self.assertEqual(str(path), "/tmp/validation_tfexample.tfrecord-00000-of-00150")
 
+    def test_first_sharded_tfrecord_uri_supports_gcs_uri(self) -> None:
+        dataset_uri = f"gs://{WOMD_VERSION}/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150"
+        self.assertEqual(
+            first_sharded_tfrecord_uri(dataset_uri),
+            f"gs://{WOMD_VERSION}/uncompressed/tf_example/validation/validation_tfexample.tfrecord-00000-of-00150",
+        )
+        self.assertEqual(
+            sharded_tfrecord_uri(dataset_uri, 7),
+            f"gs://{WOMD_VERSION}/uncompressed/tf_example/validation/validation_tfexample.tfrecord-00007-of-00150",
+        )
+
     def test_local_dataset_uri_exists_understands_sharded_pattern(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             shard = Path(td) / "validation_tfexample.tfrecord-00000-of-00150"
             shard.write_text("x", encoding="utf-8")
             self.assertTrue(local_dataset_uri_exists(str(Path(td) / "validation_tfexample.tfrecord@150")))
+
+    def test_local_dataset_uri_complete_requires_all_shards(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "validation_tfexample.tfrecord-00000-of-00002").write_text("x", encoding="utf-8")
+            self.assertFalse(local_dataset_uri_complete(str(root / "validation_tfexample.tfrecord@2")))
+            (root / "validation_tfexample.tfrecord-00001-of-00002").write_text("x", encoding="utf-8")
+            self.assertTrue(local_dataset_uri_complete(str(root / "validation_tfexample.tfrecord@2")))
+
+    def test_dataset_uri_status_reports_local_shard_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "validation_tfexample.tfrecord-00000-of-00002").write_text("x", encoding="utf-8")
+            status = dataset_uri_status(str(root / "validation_tfexample.tfrecord@2"))
+        self.assertFalse(status["complete"])
+        self.assertEqual(status["expected_shards"], 2)
+        self.assertEqual(status["existing_shards"], 1)
+        self.assertEqual(status["missing_count"], 1)
 
     def test_validation_shard_uri_uses_expected_validation_filename(self) -> None:
         uri = validation_shard_uri(f"gs://{WOMD_VERSION}", 7)

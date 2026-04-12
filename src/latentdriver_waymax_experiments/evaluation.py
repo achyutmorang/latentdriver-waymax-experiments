@@ -18,7 +18,13 @@ from .upstream import (
     ensure_python312_compat_sitecustomize,
     ensure_upstream_exists,
 )
-from .womd import local_dataset_uri_exists, resolve_dataset_uri, waymo_dataset_root_value
+from .womd import (
+    is_gcs_uri,
+    local_dataset_uri_complete,
+    probe_tensorflow_dataset_uri,
+    resolve_dataset_uri,
+    waymo_dataset_root_value,
+)
 
 
 @dataclass(frozen=True)
@@ -172,21 +178,64 @@ def build_eval_command(*, model: str, tier: str, seed: int | None = None, vis: s
     return cmd
 
 
-def _verify_inputs(model: str, tier: str) -> Dict[str, str]:
-    inputs = _validation_inputs(load_config()["evaluation"]["tiers"][tier]["dataset_mode"])
+def _full_preprocess_completion_errors(preprocess_path: Path, intention_path: Path) -> list[str]:
+    required_dirs = {
+        "map_dir": preprocess_path / "map",
+        "route_dir": preprocess_path / "route",
+        "intention_dir": intention_path,
+    }
+    errors = [f"{name} missing: {path}" for name, path in required_dirs.items() if not path.is_dir()]
+    success_marker = preprocess_path / "_SUCCESS"
+    manifest = preprocess_path / "preprocess_manifest.json"
+    if not success_marker.is_file():
+        errors.append(f"success marker missing: {success_marker}")
+    if not manifest.is_file():
+        errors.append(f"preprocess manifest missing: {manifest}")
+    return errors
+
+
+def _verify_inputs(model: str, tier: str, *, verify_remote_reads: bool = False) -> Dict[str, str]:
+    tier_cfg = load_config()["evaluation"]["tiers"][tier]
+    dataset_mode = tier_cfg["dataset_mode"]
+    inputs = _validation_inputs(dataset_mode)
     missing = {}
     ckpt = checkpoint_path(model)
     if not ckpt.exists():
         missing["checkpoint"] = str(ckpt)
     for key, path in inputs.items():
         if key == "waymo_path":
-            if not local_dataset_uri_exists(str(path)):
+            waymo_path = str(path)
+            if not local_dataset_uri_complete(waymo_path):
                 missing[key] = str(path)
+            elif verify_remote_reads and is_gcs_uri(waymo_path):
+                probe = probe_tensorflow_dataset_uri(waymo_path)
+                if not probe.get("ok"):
+                    missing["waymo_path_gcs_read"] = json.dumps(probe, sort_keys=True)
             continue
         if not Path(path).exists():
             missing[key] = str(path)
+    if dataset_mode == "full":
+        preprocess_errors = _full_preprocess_completion_errors(
+            Path(inputs["preprocess_path"]),
+            Path(inputs["intention_path"]),
+        )
+        if preprocess_errors:
+            missing["preprocess_completion"] = "; ".join(preprocess_errors)
     ensure_upstream_exists()
     return missing
+
+
+def inspect_eval_inputs(*, model: str, tier: str, verify_remote_reads: bool = False) -> Dict[str, Any]:
+    cmd = build_eval_command(model=model, tier=tier, vis=False)
+    missing = _verify_inputs(model, tier, verify_remote_reads=verify_remote_reads)
+    return {
+        "model": model,
+        "tier": tier,
+        "verify_remote_reads": verify_remote_reads,
+        "command": cmd,
+        "missing_inputs": missing,
+        "ready": not bool(missing),
+    }
 
 
 def _missing_inputs_message(*, model: str, tier: str, missing: Dict[str, str]) -> str:
@@ -200,11 +249,22 @@ def _missing_inputs_message(*, model: str, tier: str, missing: Dict[str, str]) -
             "Run `python3 scripts/download_checkpoints.py --evaluation-only` "
             "or execute the assets notebook `notebooks/latentdriver_assets_colab.ipynb` first."
         )
-    if any(key in missing for key in ("preprocess_path", "intention_path", "waymo_path")):
+    if any(key in missing for key in ("preprocess_path", "intention_path", "waymo_path", "preprocess_completion")):
         lines.append("")
         lines.append(
             "Dataset or preprocess artifacts are missing. "
-            "Run `notebooks/latentdriver_preprocess_val_colab.ipynb` first."
+            "Run the Colab runner `full-preprocess` profile until it writes `_SUCCESS` and `preprocess_manifest.json`."
+        )
+    if "waymo_path_gcs_read" in missing:
+        lines.append("")
+        lines.append("TensorFlow cannot read the WOMD GCS URI with the current runtime credentials.")
+        lines.append(
+            "Preferred fix: stage the full validation TFRecords into the Drive-backed `assets/raw_womd` cache, "
+            "then rerun eval with `--waymo-dataset-root /content/drive/MyDrive/waymax_research/"
+            "latentdriver_waymax_experiments/assets/raw_womd`."
+        )
+        lines.append(
+            "Alternative: authenticate Application Default Credentials for GCS in the Colab runtime and rerun with the `gs://` root."
         )
     return "\n".join(lines)
 
@@ -219,7 +279,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     resolved_seed = int(load_config()["evaluation"]["tiers"][tier].get("seed", 0) if seed is None else seed)
     bundle = create_run_bundle(tier=f"{tier}_{model}_seed{resolved_seed}")
     cmd = build_eval_command(model=model, tier=tier, seed=resolved_seed, vis=vis, metrics_path=bundle["metrics_path"], vis_output_dir=bundle["vis_dir"])
-    missing = _verify_inputs(model, tier)
+    missing = _verify_inputs(model, tier, verify_remote_reads=not dry_run)
     snapshot = {
         "model": model,
         "tier": tier,

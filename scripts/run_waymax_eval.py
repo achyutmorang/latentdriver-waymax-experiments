@@ -24,6 +24,8 @@ def main() -> int:
     vis = False if args.vis == "false" else args.vis
     payload = run_eval(model=args.model, tier=args.tier, seed=args.seed, vis=vis, dry_run=args.dry_run)
     print(json.dumps(payload, indent=2, sort_keys=True))
+    if args.dry_run and not payload.get("ready", True):
+        return 1
     return 0
 
 

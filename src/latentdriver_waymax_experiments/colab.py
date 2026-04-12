@@ -44,14 +44,16 @@ def bind_drive_layout(drive_root: str) -> Dict[str, str]:
     root = Path(drive_root).expanduser() / "latentdriver_waymax_experiments"
     checkpoints = root / "assets" / "checkpoints"
     preprocessed = root / "assets" / "preprocessed"
+    raw_womd = root / "assets" / "raw_womd"
     smoke = root / "assets" / "smoke"
     results = root / "results" / "runs"
     debug_runs = root / "debug_runs"
-    for path in (checkpoints, preprocessed, smoke, results, debug_runs):
+    for path in (checkpoints, preprocessed, raw_womd, smoke, results, debug_runs):
         path.mkdir(parents=True, exist_ok=True)
 
     _bind_symlink(resolve_repo_relative("artifacts/assets/checkpoints"), checkpoints)
     _bind_symlink(resolve_repo_relative("artifacts/assets/preprocessed"), preprocessed)
+    _bind_symlink(resolve_repo_relative("artifacts/assets/raw_womd"), raw_womd)
     _bind_symlink(resolve_repo_relative("artifacts/assets/smoke"), smoke)
     _bind_symlink(resolve_repo_relative("results/runs"), results)
     _bind_symlink(resolve_repo_relative("results/debug_runs"), debug_runs)
@@ -61,6 +63,7 @@ def bind_drive_layout(drive_root: str) -> Dict[str, str]:
         "drive_root": str(root),
         "checkpoints": str(checkpoints),
         "preprocessed": str(preprocessed),
+        "raw_womd": str(raw_womd),
         "smoke": str(smoke),
         "results": str(results),
         "debug_runs": str(debug_runs),
