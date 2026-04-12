@@ -14,6 +14,12 @@ DEFAULT_REPO_BRANCH = "main"
 DEFAULT_REPO_DIR = Path("/content/latentdriver-waymax-experiments")
 DEFAULT_DRIVE_BASE_ROOT = Path("/content/drive/MyDrive/waymax_research")
 DEFAULT_WAYMO_DATASET_ROOT = "gs://waymo_open_dataset_motion_v_1_1_0"
+DRIVE_MOUNT_HELP = (
+    "Google Drive is not mounted at {my_drive}. The shell-only Colab runner cannot call "
+    "google.colab.drive.mount() because that OAuth flow requires the live notebook IPython "
+    "kernel, not a python3 subprocess from %%bash. In Colab, click the Files sidebar folder "
+    "icon, choose 'Mount Drive', finish the prompt, then rerun this bootstrap cell."
+)
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> dict[str, Any]:
@@ -62,13 +68,11 @@ def sync_repo(*, repo_url: str, branch: str, repo_dir: Path) -> dict[str, Any]:
     }
 
 
-def mount_drive(mountpoint: Path) -> dict[str, Any]:
-    try:
-        from google.colab import drive  # type: ignore
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("google.colab is not available; run this bootstrap inside Colab or pass --skip-drive-mount.") from exc
-    drive.mount(str(mountpoint))
-    return {"mountpoint": str(mountpoint), "mounted": True}
+def require_drive_mounted(mountpoint: Path) -> dict[str, Any]:
+    my_drive = mountpoint / "MyDrive"
+    if not my_drive.is_dir():
+        raise RuntimeError(DRIVE_MOUNT_HELP.format(my_drive=my_drive))
+    return {"mountpoint": str(mountpoint), "my_drive": str(my_drive), "mounted": True, "mode": "already_mounted"}
 
 
 def bind_drive(*, repo_dir: Path, drive_base_root: Path) -> dict[str, str]:
@@ -98,13 +102,13 @@ def bootstrap(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "repo": sync_repo(repo_url=repo_url, branch=branch, repo_dir=repo_dir),
         "waymo_dataset_root": waymo_dataset_root,
     }
     if skip_drive_mount:
         payload["drive_mount"] = {"skipped": True, "mountpoint": str(drive_mountpoint)}
     else:
-        payload["drive_mount"] = mount_drive(drive_mountpoint)
+        payload["drive_mount"] = require_drive_mounted(drive_mountpoint)
+    payload["repo"] = sync_repo(repo_url=repo_url, branch=branch, repo_dir=repo_dir)
     if skip_bind:
         payload["drive_binding"] = {"skipped": True, "drive_base_root": str(drive_base_root)}
     else:
@@ -124,18 +128,25 @@ def main() -> int:
     parser.add_argument("--waymo-dataset-root", default=DEFAULT_WAYMO_DATASET_ROOT)
     parser.add_argument("--skip-drive-mount", action="store_true")
     parser.add_argument("--skip-bind", action="store_true")
+    parser.add_argument("--debug", action="store_true", help="Re-raise bootstrap exceptions with full tracebacks.")
     args = parser.parse_args()
 
-    payload = bootstrap(
-        repo_url=args.repo_url,
-        branch=args.branch,
-        repo_dir=args.repo_dir,
-        drive_base_root=args.drive_base_root,
-        drive_mountpoint=args.drive_mountpoint,
-        waymo_dataset_root=args.waymo_dataset_root,
-        skip_drive_mount=args.skip_drive_mount,
-        skip_bind=args.skip_bind,
-    )
+    try:
+        payload = bootstrap(
+            repo_url=args.repo_url,
+            branch=args.branch,
+            repo_dir=args.repo_dir,
+            drive_base_root=args.drive_base_root,
+            drive_mountpoint=args.drive_mountpoint,
+            waymo_dataset_root=args.waymo_dataset_root,
+            skip_drive_mount=args.skip_drive_mount,
+            skip_bind=args.skip_bind,
+        )
+    except Exception as exc:
+        if args.debug:
+            raise
+        print(f"[colab-bootstrap] ERROR: {exc}", file=sys.stderr)
+        return 1
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

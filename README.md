@@ -38,7 +38,7 @@ Source: [Sephirex-x/LatentDriver on Hugging Face](https://huggingface.co/Sephire
 - [`scripts/prepare_smoke_subset.py`](./scripts/prepare_smoke_subset.py): build a one-shard validation smoke subset from raw WOMD validation TFRecords.
 - [`scripts/stage_womd_validation_shard.py`](./scripts/stage_womd_validation_shard.py): copy one validation shard from authenticated WOMD GCS storage into a local Drive-backed staging root for smoke preprocessing.
 - [`scripts/preprocess_validation_only.py`](./scripts/preprocess_validation_only.py): run validation-only preprocessing for smoke or full validation.
-- [`scripts/colab_bootstrap.py`](./scripts/colab_bootstrap.py): shell-invoked Colab bootstrapper for clone/pull, Drive mount, and persistent artifact/debug binding.
+- [`scripts/colab_bootstrap.py`](./scripts/colab_bootstrap.py): shell-invoked Colab bootstrapper for existing Drive mount validation, clone/pull, and persistent artifact/debug binding.
 - [`scripts/colab_canary.py`](./scripts/colab_canary.py): CLI-first Colab runner that executes named profiles and writes Drive-backed debug bundles.
 - [`scripts/pull_latest_debug.py`](./scripts/pull_latest_debug.py): local rclone helper for pulling the latest Colab debug bundle or latest failure bundle from Drive.
 - [`scripts/run_waymax_eval.py`](./scripts/run_waymax_eval.py): run a standardized Waymax evaluation for one released checkpoint.
@@ -159,7 +159,7 @@ Use one notebook as the Colab terminal launcher:
 
 - recommended runner: [`notebooks/latentdriver_colab_runner.ipynb`](./notebooks/latentdriver_colab_runner.ipynb)
 
-The notebook itself is intentionally shell-only. It downloads `scripts/colab_bootstrap.py`, then that script clones or fast-forwards `main`, mounts Drive, binds the persistent artifact/debug layout, and leaves profile execution to:
+The notebook itself is intentionally shell-only. Mount Drive first from the Colab Files sidebar if `/content/drive/MyDrive` is not present. The notebook downloads `scripts/colab_bootstrap.py`, then that script validates the existing Drive mount, clones or fast-forwards `main`, binds the persistent artifact/debug layout, and leaves profile execution to:
 
 ```bash
 python3 scripts/colab_canary.py \

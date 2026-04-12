@@ -2,7 +2,7 @@
 
 Recommended single-notebook workflow:
 
-- [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/achyutmorang/latentdriver-waymax-experiments/blob/main/notebooks/latentdriver_colab_runner.ipynb) `latentdriver_colab_runner.ipynb`: one shell-only Colab terminal-style launcher. It downloads and runs `scripts/colab_bootstrap.py`, then calls `scripts/colab_canary.py --profile ...` so notebook cells do not own experiment logic.
+- [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/achyutmorang/latentdriver-waymax-experiments/blob/main/notebooks/latentdriver_colab_runner.ipynb) `latentdriver_colab_runner.ipynb`: one shell-only Colab terminal-style launcher. Mount Drive first from the Colab Files sidebar if `/content/drive/MyDrive` is not present. It downloads and runs `scripts/colab_bootstrap.py`, then calls `scripts/colab_canary.py --profile ...` so notebook cells do not own experiment logic.
 
 Default profile:
 
