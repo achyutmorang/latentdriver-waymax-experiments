@@ -168,6 +168,8 @@ python3 scripts/colab_canary.py \
   --waymo-dataset-root gs://waymo_open_dataset_motion_v_1_1_0
 ```
 
+Fresh Colab runtimes start without `external/LatentDriver`; eval, preprocessing, visualization, and runtime profiles now prepend `scripts/bootstrap_upstream.py` automatically.
+
 Useful profiles:
 
 - `full-preprocess-status`: verify full preprocessing paths without scanning the large Drive cache directories.

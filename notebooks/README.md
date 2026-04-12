@@ -10,6 +10,8 @@ Default profile:
 full-eval-dry-run
 ```
 
+Profiles that depend on upstream LatentDriver automatically run `scripts/bootstrap_upstream.py` first in fresh Colab runtimes.
+
 Common profiles:
 
 ```text

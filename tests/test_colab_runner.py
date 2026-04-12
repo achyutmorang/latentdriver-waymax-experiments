@@ -32,6 +32,21 @@ class ColabRunnerTests(unittest.TestCase):
     def test_full_preprocess_status_has_no_heavy_steps_by_default(self) -> None:
         self.assertEqual(profile_steps("full-preprocess-status"), [])
 
+    def test_eval_profiles_bootstrap_upstream_before_running(self) -> None:
+        steps = profile_steps("full-eval-dry-run")
+        self.assertEqual([step.name for step in steps], ["bootstrap_upstream", "full_eval_dry_run"])
+
+    def test_install_runtime_bootstraps_upstream_first(self) -> None:
+        steps = profile_steps("full-eval-reactive-single", install_runtime=True)
+        self.assertEqual([step.name for step in steps[:2]], ["bootstrap_upstream", "setup_colab_runtime"])
+
+    def test_bootstrap_session_runs_full_setup_sequence(self) -> None:
+        steps = profile_steps("bootstrap-session")
+        self.assertEqual(
+            [step.name for step in steps],
+            ["bootstrap_upstream", "setup_colab_runtime", "download_checkpoints", "full_eval_dry_run"],
+        )
+
     def test_runtime_policy_keeps_dry_run_and_plots_lightweight(self) -> None:
         self.assertFalse(should_install_runtime_by_default("full-eval-dry-run"))
         self.assertFalse(should_install_runtime_by_default("plot-smoke-reactive"))
@@ -61,7 +76,7 @@ class ColabRunnerTests(unittest.TestCase):
             bundle_dir = Path(payload["bundle_dir"])
             self.assertEqual(payload["status"], "dry_run")
             self.assertEqual(payload["step_results"], [])
-            self.assertEqual(len(payload["steps"]), 1)
+            self.assertEqual([step["name"] for step in payload["steps"]], ["bootstrap_upstream", "full_eval_dry_run"])
             self.assertTrue((bundle_dir / "manifest.json").is_file())
             self.assertTrue((bundle_dir / "artifact_status_before.json").is_file())
             self.assertTrue((bundle_dir / "artifact_status_after.json").is_file())

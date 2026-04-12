@@ -33,6 +33,20 @@ NO_RUNTIME_SETUP_PROFILES = {
     "plot-full-reactive",
     "plot-full-non-reactive",
 }
+UPSTREAM_REQUIRED_PROFILES = {
+    "install-runtime",
+    "smoke-preprocess",
+    "smoke-eval-reactive",
+    "smoke-eval-non-reactive",
+    "full-preprocess",
+    "full-eval-dry-run",
+    "full-eval-reactive-single",
+    "full-eval-non-reactive-single",
+    "full-eval-reactive",
+    "full-eval-non-reactive",
+    "visualize-smoke",
+    "bootstrap-session",
+}
 
 
 @dataclass(frozen=True)
@@ -83,6 +97,14 @@ def _script_command(script: str, *args: object) -> tuple[str, ...]:
     return tuple([sys.executable, script, *[str(arg) for arg in args]])
 
 
+def _bootstrap_upstream_step() -> RunnerStep:
+    return RunnerStep(
+        name="bootstrap_upstream",
+        command=_script_command("scripts/bootstrap_upstream.py"),
+        description="Clone or refresh the pinned LatentDriver upstream fork and apply the local patch layer.",
+    )
+
+
 def should_install_runtime_by_default(profile: str) -> bool:
     _validate_profile(profile)
     return profile not in NO_RUNTIME_SETUP_PROFILES
@@ -108,6 +130,8 @@ def profile_steps(
         raise ValueError(f"Unknown model={model!r}")
 
     steps: list[RunnerStep] = []
+    if profile in UPSTREAM_REQUIRED_PROFILES or install_runtime:
+        steps.append(_bootstrap_upstream_step())
     if install_runtime and profile not in {"install-runtime", "bootstrap-session"}:
         steps.append(
             RunnerStep(
