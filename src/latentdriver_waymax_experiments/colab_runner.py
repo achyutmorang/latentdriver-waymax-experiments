@@ -597,6 +597,17 @@ def _refresh_debug_aliases(debug_root: Path, bundle_dir: Path, manifest: Mapping
     return alias_payload
 
 
+def _write_manifest_and_alias_manifests(manifest_path: Path, manifest: Mapping[str, Any]) -> None:
+    write_json(manifest_path, manifest)
+    debug_aliases = manifest.get("debug_aliases")
+    if not isinstance(debug_aliases, Mapping):
+        return
+    for alias in debug_aliases.values():
+        if not isinstance(alias, Mapping) or not alias.get("alias_dir"):
+            continue
+        write_json(Path(str(alias["alias_dir"])) / "manifest.json", manifest)
+
+
 def _tail_text(value: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
     stripped = value.strip()
     if not stripped:
@@ -726,7 +737,7 @@ def run_profile(
         write_json(Path(bundle["artifact_status_after_path"]), artifact_status_before)
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
         manifest["debug_aliases"] = _refresh_debug_aliases(resolved_debug_root, bundle_dir, manifest)
-        write_json(Path(bundle["manifest_path"]), manifest)
+        _write_manifest_and_alias_manifests(Path(bundle["manifest_path"]), manifest)
         return manifest
 
     env = dict(os.environ)
@@ -757,5 +768,5 @@ def run_profile(
     else:
         manifest["status"] = "succeeded"
     manifest["debug_aliases"] = _refresh_debug_aliases(resolved_debug_root, bundle_dir, manifest)
-    write_json(Path(bundle["manifest_path"]), manifest)
+    _write_manifest_and_alias_manifests(Path(bundle["manifest_path"]), manifest)
     return manifest

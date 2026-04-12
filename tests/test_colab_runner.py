@@ -84,6 +84,9 @@ class ColabRunnerTests(unittest.TestCase):
             self.assertTrue((Path(td) / "latest" / "ALIAS.json").is_file())
             self.assertTrue((Path(td) / "LATEST.json").is_file())
             self.assertTrue((Path(td) / "RUN_LEDGER.jsonl").is_file())
+            latest_manifest = json.loads((Path(td) / "latest" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(latest_manifest["status"], "dry_run")
+            self.assertIn("debug_aliases", latest_manifest)
 
     def test_env_check_profile_executes_and_writes_after_status(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -92,6 +95,9 @@ class ColabRunnerTests(unittest.TestCase):
             self.assertEqual(payload["status"], "succeeded")
             self.assertEqual(payload["step_results"], [])
             self.assertTrue((bundle_dir / "artifact_status_after.json").is_file())
+            latest_manifest = json.loads((Path(td) / "latest" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(latest_manifest["status"], "succeeded")
+            self.assertIn("debug_aliases", latest_manifest)
 
     def test_failed_profile_updates_latest_failure_alias_and_pointer(self) -> None:
         failed_step = RunnerStep(
@@ -109,6 +115,9 @@ class ColabRunnerTests(unittest.TestCase):
             self.assertTrue((debug_root / "LATEST_FAILURE.json").is_file())
             pointer = json.loads((debug_root / "LATEST_FAILURE.json").read_text(encoding="utf-8"))
             self.assertEqual(pointer["run_id"], payload["run_id"])
+            latest_failure_manifest = json.loads((debug_root / "latest_failure" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(latest_failure_manifest["status"], "failed")
+            self.assertIn("debug_aliases", latest_failure_manifest)
             ledger_rows = (debug_root / "RUN_LEDGER.jsonl").read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(ledger_rows), 1)
             self.assertEqual(json.loads(ledger_rows[0])["failed_step"], "forced_failure")
