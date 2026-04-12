@@ -53,12 +53,40 @@ class EvaluationTests(unittest.TestCase):
             self.assertIn("++run.seed=7", " ".join(cmd))
 
     def test_build_eval_command_supports_gcs_full_validation_root(self) -> None:
-        os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = "gs://waymo_open_dataset_motion_v_1_1_0"
-        cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
+        with patch.dict(
+            os.environ,
+            {
+                "LATENTDRIVER_WAYMO_DATASET_ROOT": "gs://waymo_open_dataset_motion_v_1_1_0",
+                "LATENTDRIVER_EVAL_DEVICE_COUNT": "7",
+            },
+        ):
+            cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
         self.assertIn(
             "++waymax_conf.path=gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150",
             " ".join(cmd),
         )
+
+    def test_build_eval_command_clamps_full_batch_dims_to_available_devices(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LATENTDRIVER_WAYMO_DATASET_ROOT": "gs://waymo_open_dataset_motion_v_1_1_0",
+                "LATENTDRIVER_EVAL_DEVICE_COUNT": "1",
+            },
+        ):
+            cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
+        self.assertIn("++batch_dims=[1,125]", " ".join(cmd))
+
+    def test_build_eval_command_keeps_full_batch_dims_on_multi_device_hosts(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LATENTDRIVER_WAYMO_DATASET_ROOT": "gs://waymo_open_dataset_motion_v_1_1_0",
+                "LATENTDRIVER_EVAL_DEVICE_COUNT": "8",
+            },
+        ):
+            cmd = build_eval_command(model="latentdriver_t2_j3", tier="full_reactive", vis=False)
+        self.assertIn("++batch_dims=[7,125]", " ".join(cmd))
 
     def test_flatten_metrics_maps_expected_keys(self) -> None:
         payload = {

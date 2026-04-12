@@ -65,6 +65,48 @@ def _parse_batch_dims(batch_dims: Iterable[int]) -> str:
     return f"[{','.join(str(v) for v in values)}]"
 
 
+def _available_eval_device_count() -> int | None:
+    override = os.environ.get("LATENTDRIVER_EVAL_DEVICE_COUNT", "").strip()
+    if override:
+        value = int(override)
+        if value <= 0:
+            raise ValueError("LATENTDRIVER_EVAL_DEVICE_COUNT must be positive")
+        return value
+
+    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if cuda_visible_devices and cuda_visible_devices != "-1":
+        visible = [item.strip() for item in cuda_visible_devices.split(",") if item.strip()]
+        if visible:
+            return len(visible)
+
+    try:
+        proc = subprocess.run(["nvidia-smi", "-L"], text=True, capture_output=True, check=False, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        gpu_count = sum(1 for line in proc.stdout.splitlines() if line.strip().startswith("GPU "))
+        if gpu_count > 0:
+            return gpu_count
+
+    try:
+        import jax  # type: ignore
+    except Exception:
+        return None
+    return max(1, int(jax.local_device_count()))
+
+
+def _effective_batch_dims(batch_dims: Iterable[int]) -> list[int]:
+    values = [int(v) for v in batch_dims]
+    if not values:
+        raise ValueError("batch_dims must not be empty")
+    if values[0] <= 0:
+        raise ValueError("batch_dims[0] must be positive")
+    device_count = _available_eval_device_count()
+    if device_count is not None:
+        values[0] = min(values[0], device_count)
+    return values
+
+
 def _tail_text(text: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
     stripped = text.strip()
     if not stripped:
@@ -114,7 +156,7 @@ def build_eval_command(*, model: str, tier: str, seed: int | None = None, vis: s
         f"++waymax_conf.path={inputs['waymo_path']}",
         f"++data_conf.path_to_processed_map_route={inputs['preprocess_path']}",
         f"++metric_conf.intention_label_path={inputs['intention_path']}",
-        f"++batch_dims={_parse_batch_dims(tier_cfg['batch_dims'])}",
+        f"++batch_dims={_parse_batch_dims(_effective_batch_dims(tier_cfg['batch_dims']))}",
         f"++ego_control_setting.npc_policy_type={tier_cfg['npc_policy_type']}",
         f"++method.ckpt_path={ckpt}",
         f"++vis={vis}",

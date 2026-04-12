@@ -169,6 +169,7 @@ python3 scripts/colab_canary.py \
 ```
 
 Fresh Colab runtimes start without `external/LatentDriver`; eval, preprocessing, visualization, and runtime profiles now prepend `scripts/bootstrap_upstream.py` automatically.
+Full-eval batch dimensions are hardware-adaptive: the config keeps the multi-device target `[7,125]`, but single-GPU Colab runs emit `[1,125]` to satisfy Waymax/JAX `local_device_count()` constraints.
 
 Useful profiles:
 
