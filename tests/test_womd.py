@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -97,6 +98,47 @@ class WomdPathTests(unittest.TestCase):
     def test_is_gcs_uri(self) -> None:
         self.assertTrue(is_gcs_uri("gs://bucket/path"))
         self.assertFalse(is_gcs_uri("/tmp/path"))
+
+    def test_probe_tensorflow_dataset_uri_reads_one_record(self) -> None:
+        from latentdriver_waymax_experiments.womd import probe_tensorflow_dataset_uri
+
+        class FakeDataset:
+            def __init__(self, paths):
+                self.paths = paths
+
+            def take(self, _count):
+                return iter([b"record"])
+
+        fake_tf = types.SimpleNamespace(
+            io=types.SimpleNamespace(gfile=types.SimpleNamespace(exists=lambda _path: True)),
+            data=types.SimpleNamespace(TFRecordDataset=FakeDataset),
+        )
+        with patch.dict(sys.modules, {"tensorflow": fake_tf}):
+            result = probe_tensorflow_dataset_uri("gs://bucket/path/data.tfrecord@150")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["probe"], "tensorflow_tfrecord_read")
+        self.assertEqual(result["read_records"], 1)
+        self.assertEqual(result["target"], "gs://bucket/path/data.tfrecord-00000-of-00150")
+
+    def test_probe_tensorflow_dataset_uri_reports_read_failures(self) -> None:
+        from latentdriver_waymax_experiments.womd import probe_tensorflow_dataset_uri
+
+        class FakeDataset:
+            def __init__(self, paths):
+                self.paths = paths
+
+            def take(self, _count):
+                raise PermissionError("anonymous caller")
+
+        fake_tf = types.SimpleNamespace(
+            io=types.SimpleNamespace(gfile=types.SimpleNamespace(exists=lambda _path: True)),
+            data=types.SimpleNamespace(TFRecordDataset=FakeDataset),
+        )
+        with patch.dict(sys.modules, {"tensorflow": fake_tf}):
+            result = probe_tensorflow_dataset_uri("gs://bucket/path/data.tfrecord@150")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_kind"], "tensorflow_tfrecord_read")
+        self.assertIn("anonymous caller", result["error"])
 
     @patch("latentdriver_waymax_experiments.womd.subprocess.run")
     @patch("latentdriver_waymax_experiments.womd.shutil.which")

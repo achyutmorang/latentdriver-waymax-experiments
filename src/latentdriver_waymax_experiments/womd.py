@@ -185,7 +185,7 @@ def probe_tensorflow_dataset_uri(dataset_uri: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "uri": dataset_uri,
         "target": target,
-        "probe": "tensorflow.io.gfile.exists",
+        "probe": "tensorflow_tfrecord_read",
     }
     try:
         import tensorflow as tf  # type: ignore
@@ -211,8 +211,32 @@ def probe_tensorflow_dataset_uri(dataset_uri: str) -> dict[str, Any]:
         return result
     result.update({"ok": exists, "exists": exists})
     if not exists:
+        result["ok"] = False
         result["error_kind"] = "not_found_or_not_authorized"
         result["error"] = "TensorFlow could not see the target WOMD shard."
+        return result
+    try:
+        record_iter = iter(tf.data.TFRecordDataset([target]).take(1))
+        next(record_iter)
+    except StopIteration:
+        result.update(
+            {
+                "ok": False,
+                "error_kind": "empty_tfrecord",
+                "error": "TensorFlow opened the shard but did not read any TFRecord examples.",
+            }
+        )
+        return result
+    except Exception as exc:
+        result.update(
+            {
+                "ok": False,
+                "error_kind": "tensorflow_tfrecord_read",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        return result
+    result.update({"ok": True, "read_records": 1})
     return result
 
 
