@@ -50,6 +50,23 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 - [ ] Scenario-bucket analysis is added for intention classes and failure modes.
 - [ ] First research intervention is selected after baseline reproduction is stable.
 
+## Run Matrix
+
+| Run | Scope | NPC setting | Models | Purpose | Status |
+| --- | --- | --- | --- | --- | --- |
+| `smoke_reactive` | One-shard validation subset | Reactive IDM agents | Public evaluation checkpoints | Fast end-to-end simulator, checkpoint, metrics, and plotting validation. | Done |
+| `smoke_non_reactive` | One-shard validation subset | Expert replay agents | Public evaluation checkpoints | Fast comparison against non-reactive replay-style traffic. | Done |
+| `full_preprocess` | Full WOMD validation split | Not applicable | Not applicable | Build durable map, route, and intention-label caches used by all full evaluations. | Done |
+| `full_eval_dry_run` | Full validation config only | Reactive by default | One selected checkpoint | Verify all paths, markers, checkpoint bindings, GCS auth, and command construction before expensive simulation. | Done |
+| `full_reactive_single` | Full WOMD validation split | Reactive IDM agents | One selected checkpoint | First scientifically meaningful full-scale simulation run; validates runtime stability before launching suites. | Next |
+| `full_non_reactive_single` | Full WOMD validation split | Expert replay agents | One selected checkpoint | Paired baseline for isolating model behavior without closed-loop NPC reactions. | Planned |
+| `full_reactive` | Full WOMD validation split | Reactive IDM agents | All public evaluation checkpoints | Main closed-loop benchmark for model comparison under interactive traffic. | Planned |
+| `full_non_reactive` | Full WOMD validation split | Expert replay agents | All public evaluation checkpoints | Replay-style benchmark for measuring model behavior under fixed surrounding traffic. | Planned |
+| `plot_full_reactive` | Completed full reactive runs | Not applicable | All completed models | Generate comparable CSV, JSON, and PNG summaries from saved run bundles. | Planned |
+| `plot_full_non_reactive` | Completed full non-reactive runs | Not applicable | All completed models | Generate paired non-reactive comparison artifacts. | Planned |
+
+Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **full run** is the reproducible validation benchmark. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which is useful for isolating ego-policy behavior from feedback effects. A **single-model full run** is the operational gate before spending compute on all checkpoints, while a **suite run** is the actual comparison layer.
+
 ## Evaluation Contract
 
 We standardize the following across models:
