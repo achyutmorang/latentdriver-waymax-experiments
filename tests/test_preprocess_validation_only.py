@@ -225,6 +225,34 @@ class PreprocessValidationOnlyTests(unittest.TestCase):
             finally:
                 clear_preprocess_outputs("smoke")
 
+    def test_full_repair_markers_does_not_require_dataset_root_env(self) -> None:
+        previous_dataset_root = os.environ.pop("LATENTDRIVER_WAYMO_DATASET_ROOT", None)
+        full_root = REPO_ROOT / "artifacts" / "assets" / "preprocessed" / "full"
+        preprocess_root = full_root / "val_preprocessed_path"
+        map_dir = preprocess_root / "map"
+        route_dir = preprocess_root / "route"
+        intention_dir = full_root / "val_intention_label"
+        argv = ["preprocess_validation_only.py", "--mode", "full", "--repair-markers"]
+        try:
+            map_dir.mkdir(parents=True, exist_ok=True)
+            route_dir.mkdir(parents=True, exist_ok=True)
+            intention_dir.mkdir(parents=True, exist_ok=True)
+            for index in range(2):
+                (map_dir / f"{index}.npy").write_text("x", encoding="utf-8")
+                (route_dir / f"{index}.npy").write_text("x", encoding="utf-8")
+                (intention_dir / f"{index}.txt").write_text("x", encoding="utf-8")
+            with patch.object(sys, "argv", argv):
+                with patch("scripts.preprocess_validation_only.subprocess.run") as run_mock:
+                    rc = preprocess_main()
+            self.assertEqual(rc, 0)
+            run_mock.assert_not_called()
+            manifest = json.loads((preprocess_root / "preprocess_manifest.json").read_text(encoding="utf-8"))
+            self.assertIsNone(manifest["waymo_path"])
+        finally:
+            clear_preprocess_outputs("full")
+            if previous_dataset_root is not None:
+                os.environ["LATENTDRIVER_WAYMO_DATASET_ROOT"] = previous_dataset_root
+
     def test_main_reuses_existing_complete_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             raw_root = Path(td) / "raw"

@@ -13,7 +13,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.config import load_config
+from latentdriver_waymax_experiments.config import load_config, resolve_repo_relative
 from latentdriver_waymax_experiments.evaluation import _validation_inputs
 from latentdriver_waymax_experiments.upstream import (
     ensure_crdp_compat_source_patch,
@@ -44,8 +44,24 @@ def build_preprocess_command(*, mode: str, batch_size: int | None = None) -> lis
     ]
 
 
+def _preprocess_destination_inputs(mode: str) -> dict[str, Path]:
+    cfg = load_config()
+    preprocessed_root = resolve_repo_relative(cfg["assets"]["preprocessed_root"])
+    if mode == "full":
+        return {
+            "preprocess_path": preprocessed_root / "full" / "val_preprocessed_path",
+            "intention_path": preprocessed_root / "full" / "val_intention_label",
+        }
+    if mode == "smoke":
+        return {
+            "preprocess_path": preprocessed_root / "smoke" / "val_preprocessed_path",
+            "intention_path": preprocessed_root / "smoke" / "val_intention_label",
+        }
+    raise ValueError(f"Unsupported mode={mode!r}")
+
+
 def _preprocess_output_paths(mode: str) -> dict[str, Path]:
-    inputs = _validation_inputs(mode)
+    inputs = _preprocess_destination_inputs(mode)
     preprocess_root = Path(inputs["preprocess_path"])
     return {
         "preprocess_root": preprocess_root,
@@ -233,6 +249,24 @@ def repair_preprocess_complete_markers(mode: str, payload: dict[str, Any]) -> di
     return manifest
 
 
+def _repair_payload(mode: str, *, dry_run: bool) -> dict[str, Any]:
+    inputs = _preprocess_destination_inputs(mode)
+    try:
+        waymo_path: str | None = str(_validation_inputs(mode)["waymo_path"])
+    except EnvironmentError:
+        waymo_path = None
+    command = [sys.executable, "scripts/preprocess_validation_only.py", "--mode", mode, "--repair-markers"]
+    if dry_run:
+        command.append("--dry-run")
+    return {
+        "mode": mode,
+        "command": command,
+        "waymo_path": waymo_path,
+        "preprocess_path": str(inputs["preprocess_path"]),
+        "intention_path": str(inputs["intention_path"]),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run validation-only preprocessing for smoke or full validation.")
     parser.add_argument("--mode", choices=["smoke", "full"], default="smoke")
@@ -258,10 +292,31 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.repair_markers:
+        cache_status = preprocess_cache_status(args.mode)
+        payload: dict[str, Any] = {
+            **_repair_payload(args.mode, dry_run=args.dry_run),
+            "cache_status": cache_status,
+            "force": args.force,
+            "auto_force_partial": args.auto_force_partial,
+            "batch_size_override": args.batch_size,
+            "workers": args.workers,
+            "jax_platform": args.jax_platform,
+            "repair_markers": True,
+        }
+        payload["repair_probe"] = can_repair_preprocess_markers(args.mode)[1]
+        if args.dry_run:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        payload["repair"] = repair_preprocess_complete_markers(args.mode, payload)
+        payload["cache_action"] = "repaired_markers"
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
     inputs = _validation_inputs(args.mode)
     cmd = build_preprocess_command(mode=args.mode, batch_size=args.batch_size)
     cache_status = preprocess_cache_status(args.mode)
-    payload: dict[str, Any] = {
+    payload = {
         "mode": args.mode,
         "command": cmd,
         "waymo_path": str(inputs["waymo_path"]),
@@ -273,17 +328,8 @@ def main() -> int:
         "batch_size_override": args.batch_size,
         "workers": args.workers,
         "jax_platform": args.jax_platform,
-        "repair_markers": args.repair_markers,
+        "repair_markers": False,
     }
-    if args.repair_markers:
-        payload["repair_probe"] = can_repair_preprocess_markers(args.mode)[1]
-        if args.dry_run:
-            print(json.dumps(payload, indent=2, sort_keys=True))
-            return 0
-        payload["repair"] = repair_preprocess_complete_markers(args.mode, payload)
-        payload["cache_action"] = "repaired_markers"
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
 
     upstream_dir = ensure_upstream_exists()
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
