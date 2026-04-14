@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -283,18 +285,34 @@ def build_eval_command(*, model: str, tier: str, seed: int | None = None, vis: s
 
 
 def _replace_waymo_path(cmd: List[str], waymo_path: str) -> List[str]:
+    return _replace_hydra_override(cmd, "++waymax_conf.path=", waymo_path)
+
+
+def _replace_hydra_override(cmd: List[str], prefix: str, value: str | Path) -> List[str]:
     updated = []
     replaced = False
-    prefix = "++waymax_conf.path="
     for item in cmd:
         if item.startswith(prefix):
-            updated.append(f"{prefix}{waymo_path}")
+            updated.append(f"{prefix}{value}")
             replaced = True
         else:
             updated.append(item)
     if not replaced:
-        raise RuntimeError("Unable to replace waymo path in eval command")
+        raise RuntimeError(f"Unable to replace Hydra override with prefix={prefix!r}")
     return updated
+
+
+def _replace_preprocess_paths(cmd: List[str], *, preprocess_path: Path, intention_path: Path) -> List[str]:
+    updated = _replace_hydra_override(
+        cmd,
+        "++data_conf.path_to_processed_map_route=",
+        preprocess_path,
+    )
+    return _replace_hydra_override(
+        updated,
+        "++metric_conf.intention_label_path=",
+        intention_path,
+    )
 
 
 def _sharded_eval_targets(dataset_uri: str, *, max_shards: int | None = None) -> List[str]:
@@ -323,6 +341,88 @@ def _full_preprocess_completion_errors(preprocess_path: Path, intention_path: Pa
     if not manifest.is_file():
         errors.append(f"preprocess manifest missing: {manifest}")
     return errors
+
+
+def _local_preprocess_root() -> Path:
+    override = os.environ.get("LATENTDRIVER_LOCAL_PREPROCESS_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser()
+    if Path("/content").exists():
+        return Path("/content/latentdriver_preprocess_cache")
+    return resolve_repo_relative("artifacts/local_preprocess_cache")
+
+
+def _materialize_preprocess_enabled(dataset_mode: str) -> bool:
+    raw = os.environ.get("LATENTDRIVER_MATERIALIZE_PREPROCESS_CACHE", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return dataset_mode == "full"
+
+
+def _copy_file_with_retries(src: Path, dst: Path, *, attempts: int = 5) -> bool:
+    src_stat = src.stat()
+    if dst.exists() and dst.stat().st_size == src_stat.st_size:
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            shutil.copy2(src, tmp)
+            tmp.replace(dst)
+            return True
+        except OSError as exc:
+            last_error = exc
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            time.sleep(min(2 ** attempt, 10))
+    raise OSError(f"Failed to copy {src} -> {dst} after {attempts} attempts: {last_error}")
+
+
+def _copy_tree_incremental(src: Path, dst: Path) -> dict[str, int]:
+    if not src.is_dir():
+        raise FileNotFoundError(f"Preprocess cache source directory missing: {src}")
+    stats = {"copied": 0, "skipped": 0}
+    for item in src.rglob("*"):
+        if not item.is_file():
+            continue
+        rel = item.relative_to(src)
+        copied = _copy_file_with_retries(item, dst / rel)
+        stats["copied" if copied else "skipped"] += 1
+    return stats
+
+
+def materialize_preprocess_cache(
+    *,
+    dataset_mode: str,
+    preprocess_path: Path,
+    intention_path: Path,
+) -> dict[str, Any]:
+    target_root = _local_preprocess_root() / dataset_mode
+    target_preprocess = target_root / "val_preprocessed_path"
+    target_intention = target_root / "val_intention_label"
+    copy_stats = {
+        "map": _copy_tree_incremental(preprocess_path / "map", target_preprocess / "map"),
+        "route": _copy_tree_incremental(preprocess_path / "route", target_preprocess / "route"),
+        "intention": _copy_tree_incremental(intention_path, target_intention),
+    }
+    for marker in ("_SUCCESS", "preprocess_manifest.json"):
+        source_marker = preprocess_path / marker
+        if source_marker.is_file():
+            _copy_file_with_retries(source_marker, target_preprocess / marker)
+    return {
+        "enabled": True,
+        "dataset_mode": dataset_mode,
+        "source_preprocess_path": str(preprocess_path),
+        "source_intention_path": str(intention_path),
+        "preprocess_path": str(target_preprocess),
+        "intention_path": str(target_intention),
+        "copy_stats": copy_stats,
+    }
 
 
 def _verify_inputs(model: str, tier: str, *, verify_remote_reads: bool = False) -> Dict[str, str]:
@@ -566,11 +666,12 @@ def run_eval_resumable(
     shard_root = Path(bundle["run_dir"]) / "shards"
     shard_root.mkdir(parents=True, exist_ok=True)
     progress_path = Path(bundle["run_dir"]) / "progress.json"
+    materialized_preprocess: dict[str, Any] | None = None
 
     completed_payloads: List[Dict[str, Any]] = []
     shard_status: List[Dict[str, Any]] = []
 
-    def write_progress() -> None:
+    def write_progress(*, status: str = "running") -> None:
         write_json(
             progress_path,
             {
@@ -578,11 +679,28 @@ def run_eval_resumable(
                 "model": model,
                 "tier": tier,
                 "seed": resolved_seed,
+                "status": status,
                 "shards_total": len(shard_uris),
                 "shards_completed": len(completed_payloads),
                 "shards": shard_status,
+                "materialized_preprocess": materialized_preprocess,
             },
         )
+
+    dataset_mode = str(tier_cfg["dataset_mode"])
+    if _materialize_preprocess_enabled(dataset_mode):
+        write_progress(status="materializing_preprocess")
+        materialized_preprocess = materialize_preprocess_cache(
+            dataset_mode=dataset_mode,
+            preprocess_path=Path(inputs["preprocess_path"]),
+            intention_path=Path(inputs["intention_path"]),
+        )
+        cmd = _replace_preprocess_paths(
+            cmd,
+            preprocess_path=Path(materialized_preprocess["preprocess_path"]),
+            intention_path=Path(materialized_preprocess["intention_path"]),
+        )
+        write_progress(status="running")
 
     for shard_index, shard_uri in enumerate(shard_uris):
         shard_id = f"shard-{shard_index:05d}"
@@ -625,7 +743,7 @@ def run_eval_resumable(
         stderr_path.write_text(proc.stderr, encoding="utf-8")
         if proc.returncode != 0:
             shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "failed", "returncode": proc.returncode})
-            write_progress()
+            write_progress(status="failed")
             raise RuntimeError(
                 f"Shard {shard_id} failed with code {proc.returncode}.\n"
                 f"stderr_path: {stderr_path}\n"
@@ -635,7 +753,7 @@ def run_eval_resumable(
             )
         if not metrics_path.exists():
             shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "no_metrics"})
-            write_progress()
+            write_progress(status="failed")
             raise RuntimeError(f"Shard {shard_id} finished without metrics.json: {metrics_path}")
         payload = json.loads(metrics_path.read_text(encoding="utf-8"))
         completed_payloads.append(payload)
@@ -663,8 +781,10 @@ def run_eval_resumable(
         "shards": shard_status,
         "shard_root": str(shard_root),
         "progress_path": str(progress_path),
+        "materialized_preprocess": materialized_preprocess,
     }
     write_json(Path(bundle["run_manifest"]), manifest)
+    write_progress(status="completed")
     return {**manifest, "summary": summary}
 
 

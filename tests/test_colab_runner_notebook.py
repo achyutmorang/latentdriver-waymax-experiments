@@ -31,11 +31,10 @@ class ColabRunnerNotebookTests(unittest.TestCase):
             compile(source, f"<notebook cell {index}>", "exec")
             python_cell_indices.append(index)
 
-        self.assertEqual(
-            python_cell_indices,
-            [2, 3],
-            "only the Drive mount and GCS auth cells may contain notebook-native Python",
-        )
+        python_sources = ["".join(notebook["cells"][index]["source"]) for index in python_cell_indices]
+        self.assertEqual(len(python_sources), 2, "only Drive mount and GCS auth may use notebook-native Python")
+        self.assertIn("drive.mount(DRIVE_MOUNTPOINT)", python_sources[0])
+        self.assertIn("auth.authenticate_user()", python_sources[1])
 
 
 if __name__ == "__main__":
