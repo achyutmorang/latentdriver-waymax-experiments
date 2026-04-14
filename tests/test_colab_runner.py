@@ -54,6 +54,7 @@ class ColabRunnerTests(unittest.TestCase):
             [step.name for step in steps],
             ["bootstrap_upstream", "preflight_full_reactive_latentdriver_t2_j3", "full_eval_reactive_single"],
         )
+        self.assertIn("--resumable", " ".join(steps[-1].command))
 
     def test_full_eval_suite_preflights_all_public_checkpoints(self) -> None:
         steps = profile_steps("full-eval-reactive")
@@ -67,6 +68,7 @@ class ColabRunnerTests(unittest.TestCase):
                 "preflight_full_reactive_easychauffeur_ppo",
             ],
         )
+        self.assertIn("--resumable", " ".join(steps[-1].command))
 
     def test_stage_full_womd_validation_profile_uses_drive_bound_raw_cache(self) -> None:
         steps = profile_steps("stage-full-womd-validation")

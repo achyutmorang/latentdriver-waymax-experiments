@@ -80,10 +80,10 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "full-preprocess-repair": "Recreate full preprocess `_SUCCESS` and manifest markers from existing files when the counts are already consistent.",
     "full-preprocess": "Run full validation preprocessing; use only when you intentionally want to rebuild/resume preprocessing.",
     "full-eval-dry-run": "Dry-run full_reactive evaluation for one model without launching simulation.",
-    "full-eval-reactive-single": "Run one model on full_reactive.",
-    "full-eval-non-reactive-single": "Run one model on full_non_reactive.",
-    "full-eval-reactive": "Run all public checkpoints on full_reactive.",
-    "full-eval-non-reactive": "Run all public checkpoints on full_non_reactive.",
+    "full-eval-reactive-single": "Run one model on full_reactive (resumable shards).",
+    "full-eval-non-reactive-single": "Run one model on full_non_reactive (resumable shards).",
+    "full-eval-reactive": "Run all public checkpoints on full_reactive (resumable shards).",
+    "full-eval-non-reactive": "Run all public checkpoints on full_non_reactive (resumable shards).",
     "visualize-smoke": "Run a smoke visualization job and capture MP4/PDF outputs.",
     "plot-smoke-reactive": "Generate comparison plots for smoke_reactive.",
     "plot-smoke-non-reactive": "Generate comparison plots for smoke_non_reactive.",
@@ -299,7 +299,16 @@ def profile_steps(
             _full_eval_preflight_step(model=model, tier="full_reactive"),
             RunnerStep(
                 name="full_eval_reactive_single",
-                command=_script_command("scripts/run_waymax_eval.py", "--model", model, "--tier", "full_reactive", "--seed", seed),
+                command=_script_command(
+                    "scripts/run_waymax_eval.py",
+                    "--model",
+                    model,
+                    "--tier",
+                    "full_reactive",
+                    "--seed",
+                    seed,
+                    "--resumable",
+                ),
                 description="Evaluate one model on full_reactive.",
             ),
         ]
@@ -309,7 +318,16 @@ def profile_steps(
             _full_eval_preflight_step(model=model, tier="full_non_reactive"),
             RunnerStep(
                 name="full_eval_non_reactive_single",
-                command=_script_command("scripts/run_waymax_eval.py", "--model", model, "--tier", "full_non_reactive", "--seed", seed),
+                command=_script_command(
+                    "scripts/run_waymax_eval.py",
+                    "--model",
+                    model,
+                    "--tier",
+                    "full_non_reactive",
+                    "--seed",
+                    seed,
+                    "--resumable",
+                ),
                 description="Evaluate one model on full_non_reactive.",
             ),
         ]
@@ -319,7 +337,14 @@ def profile_steps(
             *_full_eval_suite_preflight_steps(tier="full_reactive"),
             RunnerStep(
                 name="full_eval_reactive_suite",
-                command=_script_command("scripts/run_public_suite.py", "--tier", "full_reactive", "--seed", seed),
+                command=_script_command(
+                    "scripts/run_public_suite.py",
+                    "--tier",
+                    "full_reactive",
+                    "--seed",
+                    seed,
+                    "--resumable",
+                ),
                 description="Evaluate all public checkpoints on full_reactive.",
             ),
         ]
@@ -329,7 +354,14 @@ def profile_steps(
             *_full_eval_suite_preflight_steps(tier="full_non_reactive"),
             RunnerStep(
                 name="full_eval_non_reactive_suite",
-                command=_script_command("scripts/run_public_suite.py", "--tier", "full_non_reactive", "--seed", seed),
+                command=_script_command(
+                    "scripts/run_public_suite.py",
+                    "--tier",
+                    "full_non_reactive",
+                    "--seed",
+                    seed,
+                    "--resumable",
+                ),
                 description="Evaluate all public checkpoints on full_non_reactive.",
             ),
         ]

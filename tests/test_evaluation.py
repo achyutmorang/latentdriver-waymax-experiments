@@ -11,7 +11,13 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from latentdriver_waymax_experiments.evaluation import build_eval_command, flatten_metrics_payload, run_public_suite
+from latentdriver_waymax_experiments.evaluation import (
+    aggregate_metrics_payloads,
+    build_eval_command,
+    flatten_metrics_payload,
+    run_eval_resumable,
+    run_public_suite,
+)
 
 
 class EvaluationTests(unittest.TestCase):
@@ -178,6 +184,33 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(flat["mar_75_95"], 90.14)
         self.assertEqual(flat["ar_75_95"], 94.31)
 
+    def test_aggregate_metrics_payloads_weights_by_episode_count(self) -> None:
+        payload = aggregate_metrics_payloads(
+            [
+                {
+                    "average": {
+                        "number of episodes": 1,
+                        "metric/collision_rate": 0.0,
+                        "metric/progress_rate": 0.5,
+                    },
+                    "per_class": {},
+                },
+                {
+                    "average": {
+                        "number of episodes": 3,
+                        "metric/collision_rate": 1.0,
+                        "metric/progress_rate": 1.0,
+                    },
+                    "per_class": {},
+                },
+            ],
+            shard_count=2,
+        )
+        self.assertEqual(payload["average"]["number of episodes"], 4)
+        self.assertAlmostEqual(payload["average"]["metric/collision_rate"], 0.75)
+        self.assertAlmostEqual(payload["average"]["metric/progress_rate"], 0.875)
+        self.assertEqual(payload["meta"]["shards_completed"], 2)
+
     def test_run_public_suite_dry_run(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             os.environ["LATENTDRIVER_RESULTS_ROOT"] = td
@@ -185,6 +218,69 @@ class EvaluationTests(unittest.TestCase):
                 suite = run_public_suite(tier="smoke_reactive", dry_run=True)
         self.assertEqual(suite["tier"], "smoke_reactive")
         self.assertGreaterEqual(len(suite["runs"]), 4)
+
+    def test_run_eval_resumable_skips_completed_shards_and_aggregates(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = {
+                "run_id": "resumable_full_reactive_latentdriver_t2_j3_seed0",
+                "run_dir": root,
+                "metrics_path": root / "metrics.json",
+                "stdout_path": root / "stdout.log",
+                "stderr_path": root / "stderr.log",
+                "config_snapshot": root / "config_snapshot.json",
+                "run_manifest": root / "run_manifest.json",
+                "vis_dir": root / "vis",
+            }
+            (root / "vis").mkdir()
+            shard0 = root / "shards" / "shard-00000"
+            shard0.mkdir(parents=True)
+            (shard0 / "metrics.json").write_text(
+                json.dumps(
+                    {
+                        "average": {"number of episodes": 1, "metric/progress_rate": 0.5},
+                        "average_over_class": {},
+                        "per_class": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def fake_run(cmd, cwd, text, capture_output, check, env):
+                metrics_arg = next(arg for arg in cmd if arg.startswith("++run.metrics_json_path="))
+                metrics_path = Path(metrics_arg.split("=", 1)[1])
+                metrics_path.write_text(
+                    json.dumps(
+                        {
+                            "average": {"number of episodes": 1, "metric/progress_rate": 1.0},
+                            "average_over_class": {},
+                            "per_class": {},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+            with patch("latentdriver_waymax_experiments.evaluation.ensure_upstream_exists", return_value=root), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_python312_compat_sitecustomize", return_value=root / "sitecustomize.py"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_lightning_compat_source_patches", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_crdp_compat_source_patch", return_value="already_patched"), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_jax_tree_map_compat_source_patch", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation.ensure_matplotlib_canvas_compat_source_patch", return_value="already_patched"), \
+                 patch("latentdriver_waymax_experiments.evaluation.create_named_run_bundle", return_value=bundle), \
+                 patch("latentdriver_waymax_experiments.evaluation._verify_inputs", return_value={}), \
+                 patch("latentdriver_waymax_experiments.evaluation._validation_inputs", return_value={"waymo_path": "gs://bucket/validation.tfrecord@2"}), \
+                 patch("latentdriver_waymax_experiments.evaluation.checkpoint_path", return_value=root / "model.ckpt"), \
+                 patch("latentdriver_waymax_experiments.evaluation.build_eval_command", return_value=["python3", "simulate.py", "++waymax_conf.path=gs://bucket/validation.tfrecord@2"]), \
+                 patch("latentdriver_waymax_experiments.evaluation.load_config", return_value={"evaluation": {"tiers": {"full_reactive": {"dataset_mode": "full", "seed": 0}}}}), \
+                 patch("latentdriver_waymax_experiments.evaluation.subprocess.run", side_effect=fake_run) as run_mock:
+                payload = run_eval_resumable(model="latentdriver_t2_j3", tier="full_reactive", seed=0, max_shards=2)
+
+            self.assertEqual(run_mock.call_count, 1)
+            self.assertEqual([item["status"] for item in payload["shards"]], ["skipped", "completed"])
+            self.assertAlmostEqual(payload["summary"]["progress_rate"], 0.75)
+            progress = json.loads((root / "progress.json").read_text(encoding="utf-8"))
+            self.assertEqual(progress["shards_completed"], 2)
 
     def test_run_waymax_eval_cli_returns_nonzero_when_dry_run_not_ready(self) -> None:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

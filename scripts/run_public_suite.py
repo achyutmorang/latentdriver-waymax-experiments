@@ -18,8 +18,18 @@ def main() -> int:
     parser.add_argument("--tier", choices=list(cfg["evaluation"]["tiers"].keys()), required=True)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resumable", action="store_true", help="Run suite using resumable shard evaluation.")
+    parser.add_argument("--no-resume", action="store_true", help="Disable resume behavior for resumable runs.")
+    parser.add_argument("--max-shards", type=int, help="Limit resumable evaluation to the first N shards.")
     args = parser.parse_args()
-    payload = run_public_suite(tier=args.tier, seed=args.seed, dry_run=args.dry_run)
+    payload = run_public_suite(
+        tier=args.tier,
+        seed=args.seed,
+        dry_run=args.dry_run,
+        resumable=args.resumable,
+        resume=not args.no_resume,
+        max_shards=args.max_shards,
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

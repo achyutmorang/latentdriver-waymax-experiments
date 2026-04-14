@@ -36,6 +36,10 @@ def create_run_bundle(*, tag: str | None = None, tier: str) -> Dict[str, Path | 
     if tag is None:
         tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{tag}_{tier}"
+    return create_named_run_bundle(run_id=run_id)
+
+
+def create_named_run_bundle(*, run_id: str) -> Dict[str, Path | str]:
     run_dir = results_root() / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     vis_dir = run_dir / "vis"

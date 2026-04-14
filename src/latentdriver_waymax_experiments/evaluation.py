@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -8,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from .artifacts import create_run_bundle, write_json
+from .artifacts import create_named_run_bundle, create_run_bundle, write_json
 from .config import load_config, resolve_repo_relative
 from .upstream import (
     ensure_crdp_compat_source_patch,
@@ -23,6 +24,8 @@ from .womd import (
     local_dataset_uri_complete,
     probe_tensorflow_dataset_uri,
     resolve_dataset_uri,
+    sharded_tfrecord_parts,
+    sharded_tfrecord_uri,
     waymo_dataset_root_value,
 )
 
@@ -148,6 +151,107 @@ def flatten_metrics_payload(metrics_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return not math.isnan(float(value))
+    return False
+
+
+def _episode_count(metrics_payload: Dict[str, Any]) -> int:
+    avg = metrics_payload.get("average", {})
+    if not isinstance(avg, dict):
+        return 0
+    value = avg.get("number of episodes")
+    return int(value) if _is_number(value) else 0
+
+
+def _weighted_mean(values: List[tuple[float, int]]) -> float | None:
+    total_weight = sum(weight for _, weight in values if weight > 0)
+    if total_weight <= 0:
+        return None
+    return sum(value * weight for value, weight in values if weight > 0) / total_weight
+
+
+def _aggregate_average_metrics(payloads: List[Dict[str, Any]]) -> Dict[str, Any]:
+    totals: Dict[str, List[tuple[float, int]]] = {}
+    total_episodes = 0
+    for payload in payloads:
+        avg = payload.get("average", {})
+        if not isinstance(avg, dict):
+            continue
+        episodes = _episode_count(payload)
+        if episodes <= 0:
+            continue
+        total_episodes += episodes
+        for key, value in avg.items():
+            if key == "number of episodes" or not _is_number(value):
+                continue
+            totals.setdefault(key, []).append((float(value), episodes))
+    aggregated: Dict[str, Any] = {"number of episodes": total_episodes}
+    for key, values in totals.items():
+        mean = _weighted_mean(values)
+        if mean is not None:
+            aggregated[key] = mean
+    return aggregated
+
+
+def _aggregate_per_class_metrics(payloads: List[Dict[str, Any]]) -> Dict[str, Any]:
+    buckets: Dict[str, Dict[str, Any]] = {}
+    for payload in payloads:
+        per_class = payload.get("per_class", {})
+        if not isinstance(per_class, dict):
+            continue
+        for label, stats in per_class.items():
+            if not isinstance(stats, dict):
+                continue
+            episodes = int(stats["number of episodes"]) if _is_number(stats.get("number of episodes")) else 0
+            bucket = buckets.setdefault(label, {"number of episodes": 0, "_metrics": {}})
+            bucket["number of episodes"] += episodes
+            metrics = bucket["_metrics"]
+            for key, value in stats.items():
+                if key == "number of episodes" or not _is_number(value):
+                    continue
+                metrics.setdefault(key, []).append((float(value), episodes))
+
+    aggregated: Dict[str, Any] = {}
+    for label, bucket in buckets.items():
+        metrics = bucket.pop("_metrics")
+        summary = {"number of episodes": bucket["number of episodes"]}
+        for key, values in metrics.items():
+            mean = _weighted_mean(values)
+            if mean is not None:
+                summary[key] = mean
+        aggregated[label] = summary
+    return aggregated
+
+
+def _aggregate_average_over_class(per_class: Dict[str, Any]) -> Dict[str, Any]:
+    totals: Dict[str, List[float]] = {}
+    for stats in per_class.values():
+        if not isinstance(stats, dict):
+            continue
+        episodes = stats.get("number of episodes")
+        if not _is_number(episodes) or int(episodes) <= 0:
+            continue
+        for key, value in stats.items():
+            if key == "number of episodes" or not _is_number(value):
+                continue
+            totals.setdefault(key, []).append(float(value))
+    return {key: sum(values) / len(values) for key, values in totals.items() if values}
+
+
+def aggregate_metrics_payloads(payloads: List[Dict[str, Any]], *, shard_count: int) -> Dict[str, Any]:
+    per_class = _aggregate_per_class_metrics(payloads)
+    return {
+        "average": _aggregate_average_metrics(payloads),
+        "average_over_class": _aggregate_average_over_class(per_class),
+        "per_class": per_class,
+        "meta": {"shards_completed": len(payloads), "shards_total": shard_count},
+    }
+
+
 def build_eval_command(*, model: str, tier: str, seed: int | None = None, vis: str | bool = False, metrics_path: Path | None = None, vis_output_dir: Path | None = None) -> List[str]:
     cfg = load_config()
     tier_cfg = cfg["evaluation"]["tiers"][tier]
@@ -176,6 +280,33 @@ def build_eval_command(*, model: str, tier: str, seed: int | None = None, vis: s
         cmd.append(f"++run.vis_output_dir={vis_output_dir}")
     cmd.extend(model_spec.get("hydra_overrides", []))
     return cmd
+
+
+def _replace_waymo_path(cmd: List[str], waymo_path: str) -> List[str]:
+    updated = []
+    replaced = False
+    prefix = "++waymax_conf.path="
+    for item in cmd:
+        if item.startswith(prefix):
+            updated.append(f"{prefix}{waymo_path}")
+            replaced = True
+        else:
+            updated.append(item)
+    if not replaced:
+        raise RuntimeError("Unable to replace waymo path in eval command")
+    return updated
+
+
+def _sharded_eval_targets(dataset_uri: str, *, max_shards: int | None = None) -> List[str]:
+    parts = sharded_tfrecord_parts(dataset_uri)
+    if parts is None:
+        return [dataset_uri]
+    _, count = parts
+    if max_shards is not None:
+        if max_shards <= 0:
+            raise ValueError("max_shards must be positive")
+        count = min(count, max_shards)
+    return [sharded_tfrecord_uri(dataset_uri, index) for index in range(count)]
 
 
 def _full_preprocess_completion_errors(preprocess_path: Path, intention_path: Path) -> list[str]:
@@ -368,12 +499,201 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     return {**manifest, "summary": summary}
 
 
-def run_public_suite(*, tier: str, seed: int | None = None, models: Iterable[str] | None = None, dry_run: bool = False) -> Dict[str, Any]:
+def _resumable_run_id(*, tier: str, model: str, seed: int) -> str:
+    return f"resumable_{tier}_{model}_seed{seed}"
+
+
+def run_eval_resumable(
+    *,
+    model: str,
+    tier: str,
+    seed: int | None = None,
+    vis: str | bool = False,
+    dry_run: bool = False,
+    resume: bool = True,
+    max_shards: int | None = None,
+) -> Dict[str, Any]:
+    upstream_dir = ensure_upstream_exists()
+    compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
+    lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
+    crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
+    jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+    matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
+    tier_cfg = load_config()["evaluation"]["tiers"][tier]
+    resolved_seed = int(tier_cfg.get("seed", 0) if seed is None else seed)
+    bundle = create_named_run_bundle(run_id=_resumable_run_id(tier=tier, model=model, seed=resolved_seed))
+    cmd = build_eval_command(
+        model=model,
+        tier=tier,
+        seed=resolved_seed,
+        vis=vis,
+        metrics_path=Path(bundle["metrics_path"]),
+        vis_output_dir=Path(bundle["vis_dir"]),
+    )
+    missing = _verify_inputs(model, tier, verify_remote_reads=not dry_run)
+    snapshot = {
+        "model": model,
+        "tier": tier,
+        "seed": resolved_seed,
+        "vis": vis,
+        "command": cmd,
+        "missing_inputs": missing,
+        "compat_sitecustomize": str(compat_sitecustomize),
+        "lightning_compat": lightning_compat,
+        "crdp_compat": crdp_compat,
+        "jax_tree_map_compat": jax_tree_map_compat,
+        "matplotlib_canvas_compat": matplotlib_canvas_compat,
+        "resume": resume,
+        "max_shards": max_shards,
+    }
+    write_json(Path(bundle["config_snapshot"]), snapshot)
+    if dry_run:
+        return {
+            "run_id": bundle["run_id"],
+            "run_dir": str(bundle["run_dir"]),
+            "seed": resolved_seed,
+            "command": cmd,
+            "missing_inputs": missing,
+            "ready": not bool(missing),
+            "resume": resume,
+            "max_shards": max_shards,
+        }
+    if missing:
+        raise FileNotFoundError(_missing_inputs_message(model=model, tier=tier, missing=missing))
+
+    inputs = _validation_inputs(tier_cfg["dataset_mode"])
+    shard_uris = _sharded_eval_targets(str(inputs["waymo_path"]), max_shards=max_shards)
+    shard_root = Path(bundle["run_dir"]) / "shards"
+    shard_root.mkdir(parents=True, exist_ok=True)
+    progress_path = Path(bundle["run_dir"]) / "progress.json"
+
+    completed_payloads: List[Dict[str, Any]] = []
+    shard_status: List[Dict[str, Any]] = []
+
+    def write_progress() -> None:
+        write_json(
+            progress_path,
+            {
+                "run_id": bundle["run_id"],
+                "model": model,
+                "tier": tier,
+                "seed": resolved_seed,
+                "shards_total": len(shard_uris),
+                "shards_completed": len(completed_payloads),
+                "shards": shard_status,
+            },
+        )
+
+    for shard_index, shard_uri in enumerate(shard_uris):
+        shard_id = f"shard-{shard_index:05d}"
+        shard_dir = shard_root / shard_id
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = shard_dir / "metrics.json"
+        stdout_path = shard_dir / "stdout.log"
+        stderr_path = shard_dir / "stderr.log"
+        vis_dir = shard_dir / "vis"
+        vis_dir.mkdir(parents=True, exist_ok=True)
+
+        if resume and metrics_path.exists():
+            try:
+                payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+                completed_payloads.append(payload)
+                shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "skipped"})
+                write_progress()
+                print(f"[resumable-eval] skipped {shard_id} ({len(completed_payloads)}/{len(shard_uris)})", flush=True)
+                continue
+            except json.JSONDecodeError:
+                pass
+
+        shard_cmd = _replace_waymo_path(cmd, shard_uri)
+        shard_cmd = [
+            arg
+            for arg in shard_cmd
+            if not arg.startswith("++run.metrics_json_path=") and not arg.startswith("++run.vis_output_dir=")
+        ]
+        shard_cmd.append(f"++run.metrics_json_path={metrics_path}")
+        shard_cmd.append(f"++run.vis_output_dir={vis_dir}")
+        proc = subprocess.run(
+            shard_cmd,
+            cwd=upstream_dir,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        stdout_path.write_text(proc.stdout, encoding="utf-8")
+        stderr_path.write_text(proc.stderr, encoding="utf-8")
+        if proc.returncode != 0:
+            shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "failed", "returncode": proc.returncode})
+            write_progress()
+            raise RuntimeError(
+                f"Shard {shard_id} failed with code {proc.returncode}.\n"
+                f"stderr_path: {stderr_path}\n"
+                f"stdout_path: {stdout_path}\n\n"
+                f"stderr tail:\n{_tail_text(proc.stderr)}\n\n"
+                f"stdout tail:\n{_tail_text(proc.stdout)}"
+            )
+        if not metrics_path.exists():
+            shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "no_metrics"})
+            write_progress()
+            raise RuntimeError(f"Shard {shard_id} finished without metrics.json: {metrics_path}")
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        completed_payloads.append(payload)
+        shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "completed"})
+        write_progress()
+        print(f"[resumable-eval] completed {shard_id} ({len(completed_payloads)}/{len(shard_uris)})", flush=True)
+
+    metrics_payload = aggregate_metrics_payloads(completed_payloads, shard_count=len(shard_uris))
+    write_json(Path(bundle["metrics_path"]), metrics_payload)
+    summary = flatten_metrics_payload(metrics_payload)
+    manifest = {
+        "run_id": bundle["run_id"],
+        "run_dir": str(bundle["run_dir"]),
+        "model": model,
+        "tier": tier,
+        "seed": resolved_seed,
+        "vis": vis,
+        "checkpoint_path": str(checkpoint_path(model)),
+        "upstream_dir": str(upstream_dir),
+        "command": cmd,
+        "metrics_path": str(bundle["metrics_path"]),
+        "stdout_path": str(bundle["stdout_path"]),
+        "stderr_path": str(bundle["stderr_path"]),
+        "vis_dir": str(bundle["vis_dir"]),
+        "shards": shard_status,
+        "shard_root": str(shard_root),
+        "progress_path": str(progress_path),
+    }
+    write_json(Path(bundle["run_manifest"]), manifest)
+    return {**manifest, "summary": summary}
+
+
+def run_public_suite(
+    *,
+    tier: str,
+    seed: int | None = None,
+    models: Iterable[str] | None = None,
+    dry_run: bool = False,
+    resumable: bool = False,
+    resume: bool = True,
+    max_shards: int | None = None,
+) -> Dict[str, Any]:
     cfg = load_config()
     selected = list(models or [m for m, spec in cfg["checkpoints"].items() if spec["method"]])
     suite = []
     for model in selected:
-        payload = run_eval(model=model, tier=tier, seed=seed, vis=False, dry_run=dry_run)
+        if resumable:
+            payload = run_eval_resumable(
+                model=model,
+                tier=tier,
+                seed=seed,
+                vis=False,
+                dry_run=dry_run,
+                resume=resume,
+                max_shards=max_shards,
+            )
+        else:
+            payload = run_eval(model=model, tier=tier, seed=seed, vis=False, dry_run=dry_run)
         suite.append(payload)
     tag_bundle = create_run_bundle(tier=f"suite_{tier}")
     summary = {
@@ -381,6 +701,9 @@ def run_public_suite(*, tier: str, seed: int | None = None, models: Iterable[str
         "seed": int(cfg["evaluation"]["tiers"][tier].get("seed", 0) if seed is None else seed),
         "models": selected,
         "runs": suite,
+        "resumable": resumable,
+        "resume": resume,
+        "max_shards": max_shards,
     }
     write_json(tag_bundle["run_dir"] / "suite_summary.json", summary)
     return summary
