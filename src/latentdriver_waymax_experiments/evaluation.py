@@ -425,10 +425,32 @@ def _copy_file_with_retries(src: Path, dst: Path, *, attempts: int = 5) -> bool:
     raise OSError(f"Failed to copy {src} -> {dst} after {attempts} attempts: {last_error}")
 
 
-def _copy_tree_incremental(src: Path, dst: Path, *, label: str, progress_every: int = 1000) -> dict[str, Any]:
+def _list_files_with_retries(src: Path, *, label: str, attempts: int = 6) -> list[Path]:
     if not src.is_dir():
         raise FileNotFoundError(f"Preprocess cache source directory missing: {src}")
-    files = [item for item in src.rglob("*") if item.is_file()]
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            files = [item for item in src.rglob("*") if item.is_file()]
+        except OSError as exc:
+            last_error = exc
+            files = []
+        if files:
+            return files
+        sleep_seconds = min(2 ** attempt, 10)
+        print(
+            f"[materialize:{label}] source scan returned 0 files; "
+            f"retrying in {sleep_seconds}s ({attempt + 1}/{attempts}) src={src}",
+            flush=True,
+        )
+        time.sleep(sleep_seconds)
+    if last_error is not None:
+        raise OSError(f"Failed to scan preprocess cache source {src}: {last_error}")
+    raise RuntimeError(f"Preprocess cache source {src} contains no files after {attempts} scan attempts")
+
+
+def _copy_tree_incremental(src: Path, dst: Path, *, label: str, progress_every: int = 1000) -> dict[str, Any]:
+    files = _list_files_with_retries(src, label=label)
     total = len(files)
     started_at = time.monotonic()
     stats: dict[str, Any] = {"copied": 0, "skipped": 0, "total": total}

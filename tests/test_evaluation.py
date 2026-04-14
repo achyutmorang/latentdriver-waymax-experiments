@@ -318,6 +318,22 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["total_files"], 3)
             self.assertIn("eta", payload["summary"])
 
+    def test_materialize_preprocess_cache_rejects_empty_source_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source_preprocess = root / "drive" / "val_preprocessed_path"
+            source_intention = root / "drive" / "val_intention_label"
+            (source_preprocess / "map").mkdir(parents=True)
+            (source_preprocess / "route").mkdir(parents=True)
+            source_intention.mkdir(parents=True)
+            with patch("latentdriver_waymax_experiments.evaluation.time.sleep", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "contains no files"):
+                    materialize_preprocess_cache(
+                        dataset_mode="full",
+                        preprocess_path=source_preprocess,
+                        intention_path=source_intention,
+                    )
+
     def test_run_eval_resumable_uses_materialized_preprocess_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
