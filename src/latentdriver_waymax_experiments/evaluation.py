@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -127,6 +128,47 @@ def _tail_text(text: str, *, max_lines: int = 80, max_chars: int = 8000) -> str:
     if len(tail) > max_chars:
         tail = tail[-max_chars:]
     return tail
+
+
+def _format_duration(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "unknown"
+    total = max(0, int(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    if minutes:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
+
+
+def _progress_payload(*, completed: int, total: int, started_at: float) -> dict[str, Any]:
+    elapsed = max(0.0, time.monotonic() - started_at)
+    rate = completed / elapsed if elapsed > 0 and completed > 0 else None
+    remaining = max(total - completed, 0)
+    eta_seconds = remaining / rate if rate else None
+    return {
+        "completed": completed,
+        "total": total,
+        "remaining": remaining,
+        "elapsed_seconds": round(elapsed, 3),
+        "elapsed": _format_duration(elapsed),
+        "rate_per_second": round(rate, 6) if rate else None,
+        "eta_seconds": round(eta_seconds, 3) if eta_seconds is not None else None,
+        "eta": _format_duration(eta_seconds),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _progress_line(*, label: str, completed: int, total: int, started_at: float, extra: str = "") -> str:
+    payload = _progress_payload(completed=completed, total=total, started_at=started_at)
+    percent = (completed / total * 100.0) if total else 100.0
+    suffix = f" {extra}" if extra else ""
+    return (
+        f"[{label}] {completed}/{total} ({percent:.1f}%) "
+        f"elapsed={payload['elapsed']} eta={payload['eta']}{suffix}"
+    )
 
 
 def _media_paths(vis_dir: Path) -> List[Path]:
@@ -383,16 +425,30 @@ def _copy_file_with_retries(src: Path, dst: Path, *, attempts: int = 5) -> bool:
     raise OSError(f"Failed to copy {src} -> {dst} after {attempts} attempts: {last_error}")
 
 
-def _copy_tree_incremental(src: Path, dst: Path) -> dict[str, int]:
+def _copy_tree_incremental(src: Path, dst: Path, *, label: str, progress_every: int = 1000) -> dict[str, Any]:
     if not src.is_dir():
         raise FileNotFoundError(f"Preprocess cache source directory missing: {src}")
-    stats = {"copied": 0, "skipped": 0}
-    for item in src.rglob("*"):
-        if not item.is_file():
-            continue
+    files = [item for item in src.rglob("*") if item.is_file()]
+    total = len(files)
+    started_at = time.monotonic()
+    stats: dict[str, Any] = {"copied": 0, "skipped": 0, "total": total}
+    print(_progress_line(label=f"materialize:{label}", completed=0, total=total, started_at=started_at), flush=True)
+    for index, item in enumerate(files, start=1):
         rel = item.relative_to(src)
         copied = _copy_file_with_retries(item, dst / rel)
         stats["copied" if copied else "skipped"] += 1
+        if index == total or index % progress_every == 0:
+            print(
+                _progress_line(
+                    label=f"materialize:{label}",
+                    completed=index,
+                    total=total,
+                    started_at=started_at,
+                    extra=f"copied={stats['copied']} skipped={stats['skipped']}",
+                ),
+                flush=True,
+            )
+    stats.update(_progress_payload(completed=total, total=total, started_at=started_at))
     return stats
 
 
@@ -405,15 +461,30 @@ def materialize_preprocess_cache(
     target_root = _local_preprocess_root() / dataset_mode
     target_preprocess = target_root / "val_preprocessed_path"
     target_intention = target_root / "val_intention_label"
+    started_at = time.monotonic()
+    print(f"[materialize] staging preprocessed cache to local disk: {target_root}", flush=True)
     copy_stats = {
-        "map": _copy_tree_incremental(preprocess_path / "map", target_preprocess / "map"),
-        "route": _copy_tree_incremental(preprocess_path / "route", target_preprocess / "route"),
-        "intention": _copy_tree_incremental(intention_path, target_intention),
+        "map": _copy_tree_incremental(preprocess_path / "map", target_preprocess / "map", label="map"),
+        "route": _copy_tree_incremental(preprocess_path / "route", target_preprocess / "route", label="route"),
+        "intention": _copy_tree_incremental(intention_path, target_intention, label="intention"),
     }
     for marker in ("_SUCCESS", "preprocess_manifest.json"):
         source_marker = preprocess_path / marker
         if source_marker.is_file():
             _copy_file_with_retries(source_marker, target_preprocess / marker)
+    total_files = sum(int(stats["total"]) for stats in copy_stats.values())
+    total_copied = sum(int(stats["copied"]) for stats in copy_stats.values())
+    total_skipped = sum(int(stats["skipped"]) for stats in copy_stats.values())
+    print(
+        _progress_line(
+            label="materialize:total",
+            completed=total_files,
+            total=total_files,
+            started_at=started_at,
+            extra=f"copied={total_copied} skipped={total_skipped}",
+        ),
+        flush=True,
+    )
     return {
         "enabled": True,
         "dataset_mode": dataset_mode,
@@ -422,6 +493,12 @@ def materialize_preprocess_cache(
         "preprocess_path": str(target_preprocess),
         "intention_path": str(target_intention),
         "copy_stats": copy_stats,
+        "summary": {
+            "total_files": total_files,
+            "copied": total_copied,
+            "skipped": total_skipped,
+            **_progress_payload(completed=total_files, total=total_files, started_at=started_at),
+        },
     }
 
 
@@ -670,8 +747,14 @@ def run_eval_resumable(
 
     completed_payloads: List[Dict[str, Any]] = []
     shard_status: List[Dict[str, Any]] = []
+    run_started_at = time.monotonic()
 
     def write_progress(*, status: str = "running") -> None:
+        progress = _progress_payload(
+            completed=len(completed_payloads),
+            total=len(shard_uris),
+            started_at=run_started_at,
+        )
         write_json(
             progress_path,
             {
@@ -682,6 +765,12 @@ def run_eval_resumable(
                 "status": status,
                 "shards_total": len(shard_uris),
                 "shards_completed": len(completed_payloads),
+                "shards_remaining": progress["remaining"],
+                "elapsed": progress["elapsed"],
+                "elapsed_seconds": progress["elapsed_seconds"],
+                "eta": progress["eta"],
+                "eta_seconds": progress["eta_seconds"],
+                "updated_at": progress["updated_at"],
                 "shards": shard_status,
                 "materialized_preprocess": materialized_preprocess,
             },
@@ -702,6 +791,11 @@ def run_eval_resumable(
         )
         write_progress(status="running")
 
+    print(
+        f"[resumable-eval] starting {len(shard_uris)} shards "
+        f"model={model} tier={tier} seed={resolved_seed}",
+        flush=True,
+    )
     for shard_index, shard_uri in enumerate(shard_uris):
         shard_id = f"shard-{shard_index:05d}"
         shard_dir = shard_root / shard_id
@@ -718,11 +812,31 @@ def run_eval_resumable(
                 completed_payloads.append(payload)
                 shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "skipped"})
                 write_progress()
-                print(f"[resumable-eval] skipped {shard_id} ({len(completed_payloads)}/{len(shard_uris)})", flush=True)
+                print(
+                    _progress_line(
+                        label="resumable-eval",
+                        completed=len(completed_payloads),
+                        total=len(shard_uris),
+                        started_at=run_started_at,
+                        extra=f"last={shard_id} status=skipped",
+                    ),
+                    flush=True,
+                )
                 continue
             except json.JSONDecodeError:
                 pass
 
+        shard_started_at = time.monotonic()
+        print(
+            _progress_line(
+                label="resumable-eval",
+                completed=len(completed_payloads),
+                total=len(shard_uris),
+                started_at=run_started_at,
+                extra=f"running={shard_id}",
+            ),
+            flush=True,
+        )
         shard_cmd = _replace_waymo_path(cmd, shard_uri)
         shard_cmd = [
             arg
@@ -742,7 +856,15 @@ def run_eval_resumable(
         stdout_path.write_text(proc.stdout, encoding="utf-8")
         stderr_path.write_text(proc.stderr, encoding="utf-8")
         if proc.returncode != 0:
-            shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "failed", "returncode": proc.returncode})
+            shard_status.append(
+                {
+                    "shard": shard_id,
+                    "uri": shard_uri,
+                    "status": "failed",
+                    "returncode": proc.returncode,
+                    "duration_seconds": round(time.monotonic() - shard_started_at, 3),
+                }
+            )
             write_progress(status="failed")
             raise RuntimeError(
                 f"Shard {shard_id} failed with code {proc.returncode}.\n"
@@ -752,14 +874,38 @@ def run_eval_resumable(
                 f"stdout tail:\n{_tail_text(proc.stdout)}"
             )
         if not metrics_path.exists():
-            shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "no_metrics"})
+            shard_status.append(
+                {
+                    "shard": shard_id,
+                    "uri": shard_uri,
+                    "status": "no_metrics",
+                    "duration_seconds": round(time.monotonic() - shard_started_at, 3),
+                }
+            )
             write_progress(status="failed")
             raise RuntimeError(f"Shard {shard_id} finished without metrics.json: {metrics_path}")
         payload = json.loads(metrics_path.read_text(encoding="utf-8"))
         completed_payloads.append(payload)
-        shard_status.append({"shard": shard_id, "uri": shard_uri, "status": "completed"})
+        shard_duration = time.monotonic() - shard_started_at
+        shard_status.append(
+            {
+                "shard": shard_id,
+                "uri": shard_uri,
+                "status": "completed",
+                "duration_seconds": round(shard_duration, 3),
+            }
+        )
         write_progress()
-        print(f"[resumable-eval] completed {shard_id} ({len(completed_payloads)}/{len(shard_uris)})", flush=True)
+        print(
+            _progress_line(
+                label="resumable-eval",
+                completed=len(completed_payloads),
+                total=len(shard_uris),
+                started_at=run_started_at,
+                extra=f"last={shard_id} shard_time={_format_duration(shard_duration)}",
+            ),
+            flush=True,
+        )
 
     metrics_payload = aggregate_metrics_payloads(completed_payloads, shard_count=len(shard_uris))
     write_json(Path(bundle["metrics_path"]), metrics_payload)

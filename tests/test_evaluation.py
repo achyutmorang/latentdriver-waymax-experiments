@@ -283,6 +283,9 @@ class EvaluationTests(unittest.TestCase):
             self.assertAlmostEqual(payload["summary"]["progress_rate"], 0.75)
             progress = json.loads((root / "progress.json").read_text(encoding="utf-8"))
             self.assertEqual(progress["shards_completed"], 2)
+            self.assertEqual(progress["status"], "completed")
+            self.assertEqual(progress["shards_remaining"], 0)
+            self.assertIn("eta", progress)
 
     def test_materialize_preprocess_cache_copies_to_local_root(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -312,6 +315,8 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual((target_preprocess / "route" / "123.npy").read_bytes(), b"route")
             self.assertEqual((target_intention / "123.txt").read_text(encoding="utf-8"), "straight_")
             self.assertTrue((target_preprocess / "_SUCCESS").is_file())
+            self.assertEqual(payload["summary"]["total_files"], 3)
+            self.assertIn("eta", payload["summary"])
 
     def test_run_eval_resumable_uses_materialized_preprocess_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -375,6 +380,8 @@ class EvaluationTests(unittest.TestCase):
 
             self.assertEqual(payload["summary"]["number_of_episodes"], 1)
             self.assertEqual(payload["materialized_preprocess"]["preprocess_path"], str(local_root / "full" / "val_preprocessed_path"))
+            self.assertEqual(payload["shards"][0]["status"], "completed")
+            self.assertIn("duration_seconds", payload["shards"][0])
 
     def test_run_waymax_eval_cli_returns_nonzero_when_dry_run_not_ready(self) -> None:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
