@@ -28,7 +28,9 @@ NO_RUNTIME_SETUP_PROFILES = {
     "download-checkpoints",
     "stage-full-womd-validation",
     "create-full-preprocess-archive",
+    "create-full-preprocess-shard-archives",
     "restore-full-preprocess-archive",
+    "restore-full-preprocess-shard-archives",
     "full-preprocess-archive-status",
     "full-preprocess-status",
     "full-preprocess-repair",
@@ -77,7 +79,9 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "download-checkpoints": "Download or verify public evaluation checkpoints into the Drive-bound checkpoint cache.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
     "create-full-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the full preprocessing cache.",
+    "create-full-preprocess-shard-archives": "Create resumable Drive-backed shard tar archives of the full preprocessing cache.",
     "restore-full-preprocess-archive": "Extract the Drive-backed full preprocessing archive into Colab local SSD.",
+    "restore-full-preprocess-shard-archives": "Extract the Drive-backed full preprocessing shard archives into Colab local SSD.",
     "full-preprocess-archive-status": "Inspect whether the full preprocessing archive exists and whether it has been restored locally.",
     "smoke-preprocess": "Run the smoke validation preprocessing command.",
     "smoke-eval-reactive": "Run all public checkpoints on smoke_reactive.",
@@ -239,6 +243,22 @@ def profile_steps(
                 description="Create a persistent Drive-backed tar archive of the full preprocessing cache.",
             ),
         ]
+    if profile == "create-full-preprocess-shard-archives":
+        return [
+            *steps,
+            RunnerStep(
+                name="create_full_preprocess_shard_archives",
+                command=_script_command(
+                    "scripts/preprocess_cache_archive.py",
+                    "create-shards",
+                    "--mode",
+                    "full",
+                    "--shards",
+                    150,
+                ),
+                description="Create resumable persistent Drive-backed shard tar archives of the full preprocessing cache.",
+            ),
+        ]
     if profile == "restore-full-preprocess-archive":
         return [
             *steps,
@@ -246,6 +266,15 @@ def profile_steps(
                 name="restore_full_preprocess_archive",
                 command=_script_command("scripts/preprocess_cache_archive.py", "extract", "--mode", "full"),
                 description="Extract the persistent full preprocessing archive into local Colab SSD.",
+            ),
+        ]
+    if profile == "restore-full-preprocess-shard-archives":
+        return [
+            *steps,
+            RunnerStep(
+                name="restore_full_preprocess_shard_archives",
+                command=_script_command("scripts/preprocess_cache_archive.py", "extract-shards", "--mode", "full"),
+                description="Extract persistent full preprocessing shard archives into local Colab SSD.",
             ),
         ]
     if profile == "smoke-preprocess":

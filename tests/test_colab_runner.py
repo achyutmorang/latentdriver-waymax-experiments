@@ -31,7 +31,9 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("bootstrap-session", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
         self.assertIn("create-full-preprocess-archive", profiles)
+        self.assertIn("create-full-preprocess-shard-archives", profiles)
         self.assertIn("restore-full-preprocess-archive", profiles)
+        self.assertIn("restore-full-preprocess-shard-archives", profiles)
         self.assertIn("full-preprocess-archive-status", profiles)
 
     def test_full_preprocess_status_has_no_heavy_steps_by_default(self) -> None:
@@ -82,10 +84,20 @@ class ColabRunnerTests(unittest.TestCase):
 
     def test_preprocess_archive_profiles_use_archive_cli(self) -> None:
         create_steps = profile_steps("create-full-preprocess-archive")
+        create_shards_steps = profile_steps("create-full-preprocess-shard-archives")
         restore_steps = profile_steps("restore-full-preprocess-archive")
+        restore_shards_steps = profile_steps("restore-full-preprocess-shard-archives")
         status_steps = profile_steps("full-preprocess-archive-status")
         self.assertIn("scripts/preprocess_cache_archive.py create --mode full --force", " ".join(create_steps[0].command))
+        self.assertIn(
+            "scripts/preprocess_cache_archive.py create-shards --mode full --shards 150",
+            " ".join(create_shards_steps[0].command),
+        )
         self.assertIn("scripts/preprocess_cache_archive.py extract --mode full", " ".join(restore_steps[0].command))
+        self.assertIn(
+            "scripts/preprocess_cache_archive.py extract-shards --mode full",
+            " ".join(restore_shards_steps[0].command),
+        )
         self.assertIn("scripts/preprocess_cache_archive.py status --mode full", " ".join(status_steps[0].command))
 
     def test_bootstrap_session_runs_full_setup_sequence(self) -> None:
@@ -102,7 +114,9 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
         self.assertFalse(should_install_runtime_by_default("full-preprocess-repair"))
         self.assertFalse(should_install_runtime_by_default("create-full-preprocess-archive"))
+        self.assertFalse(should_install_runtime_by_default("create-full-preprocess-shard-archives"))
         self.assertFalse(should_install_runtime_by_default("restore-full-preprocess-archive"))
+        self.assertFalse(should_install_runtime_by_default("restore-full-preprocess-shard-archives"))
         self.assertTrue(should_install_runtime_by_default("full-eval-reactive"))
 
     def test_resolve_debug_root_uses_drive_project_sibling_of_results_runs(self) -> None:
