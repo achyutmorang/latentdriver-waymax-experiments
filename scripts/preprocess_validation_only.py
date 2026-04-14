@@ -108,6 +108,15 @@ def _has_positive_manifest_counts(counts: dict[str, int]) -> bool:
     return all(_positive_count(counts, key) for key in ("map_npy", "route_npy", "intention_txt"))
 
 
+def filesystem_preprocess_counts(mode: str) -> dict[str, int | None]:
+    paths = _preprocess_output_paths(mode)
+    return {
+        "map_npy": _count_files(paths["map_dir"], ".npy"),
+        "route_npy": _count_files(paths["route_dir"], ".npy"),
+        "intention_txt": _count_files(paths["intention_dir"], ".txt"),
+    }
+
+
 def preprocess_cache_status(mode: str) -> dict[str, object]:
     paths = _preprocess_output_paths(mode)
     success_ready = paths["success_marker"].is_file()
@@ -126,11 +135,7 @@ def preprocess_cache_status(mode: str) -> dict[str, object]:
         map_ready = _dir_has_entries(paths["map_dir"])
         route_ready = _dir_has_entries(paths["route_dir"])
         intention_ready = _dir_has_entries(paths["intention_dir"])
-        counts = {
-            "map_npy": _count_files(paths["map_dir"], ".npy"),
-            "route_npy": _count_files(paths["route_dir"], ".npy"),
-            "intention_txt": _count_files(paths["intention_dir"], ".txt"),
-        }
+        counts = filesystem_preprocess_counts(mode)
     any_present = any(
         _path_exists(path)
         for path in [paths["map_dir"], paths["route_dir"], paths["intention_dir"], paths["success_marker"], paths["manifest"]]
@@ -149,6 +154,19 @@ def preprocess_cache_status(mode: str) -> dict[str, object]:
         "counts": counts,
         "counts_source": "manifest" if use_manifest_counts else "filesystem",
     }
+
+
+def can_repair_preprocess_markers(mode: str) -> tuple[bool, dict[str, object]]:
+    counts = filesystem_preprocess_counts(mode)
+    if any(value is None for value in counts.values()):
+        return False, {"reason": "filesystem_scan_error", "counts": counts}
+    normalized = {key: int(value or 0) for key, value in counts.items()}
+    if not all(value > 0 for value in normalized.values()):
+        return False, {"reason": "non_positive_counts", "counts": normalized}
+    distinct = set(normalized.values())
+    if len(distinct) != 1:
+        return False, {"reason": "count_mismatch", "counts": normalized}
+    return True, {"reason": "repairable", "counts": normalized}
 
 
 def clear_preprocess_outputs(mode: str) -> dict[str, object]:
@@ -189,6 +207,32 @@ def mark_preprocess_complete(mode: str, payload: dict[str, Any]) -> dict[str, ob
     return manifest
 
 
+def repair_preprocess_complete_markers(mode: str, payload: dict[str, Any]) -> dict[str, object]:
+    paths = _preprocess_output_paths(mode)
+    ok, detail = can_repair_preprocess_markers(mode)
+    if not ok:
+        raise RuntimeError(
+            f"Cannot repair preprocess markers for mode={mode}: {detail['reason']}. counts={detail['counts']}"
+        )
+    counts = detail["counts"]
+    assert isinstance(counts, dict)
+    paths["preprocess_root"].mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "status": "complete",
+        "repair": True,
+        "command": payload["command"],
+        "waymo_path": payload["waymo_path"],
+        "preprocess_path": payload["preprocess_path"],
+        "intention_path": payload["intention_path"],
+        "counts": counts,
+    }
+    paths["manifest"].write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    paths["success_marker"].write_text("complete\n", encoding="utf-8")
+    return manifest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run validation-only preprocessing for smoke or full validation.")
     parser.add_argument("--mode", choices=["smoke", "full"], default="smoke")
@@ -207,7 +251,39 @@ def main() -> int:
         default="cpu",
         help="JAX platform for preprocessing. Default cpu avoids GPU memory contention during full preprocessing.",
     )
+    parser.add_argument(
+        "--repair-markers",
+        action="store_true",
+        help="Recreate `_SUCCESS` and `preprocess_manifest.json` from existing filesystem counts when outputs already exist.",
+    )
     args = parser.parse_args()
+
+    inputs = _validation_inputs(args.mode)
+    cmd = build_preprocess_command(mode=args.mode, batch_size=args.batch_size)
+    cache_status = preprocess_cache_status(args.mode)
+    payload: dict[str, Any] = {
+        "mode": args.mode,
+        "command": cmd,
+        "waymo_path": str(inputs["waymo_path"]),
+        "preprocess_path": str(inputs["preprocess_path"]),
+        "intention_path": str(inputs["intention_path"]),
+        "cache_status": cache_status,
+        "force": args.force,
+        "auto_force_partial": args.auto_force_partial,
+        "batch_size_override": args.batch_size,
+        "workers": args.workers,
+        "jax_platform": args.jax_platform,
+        "repair_markers": args.repair_markers,
+    }
+    if args.repair_markers:
+        payload["repair_probe"] = can_repair_preprocess_markers(args.mode)[1]
+        if args.dry_run:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        payload["repair"] = repair_preprocess_complete_markers(args.mode, payload)
+        payload["cache_action"] = "repaired_markers"
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     upstream_dir = ensure_upstream_exists()
     compat_sitecustomize = ensure_python312_compat_sitecustomize(upstream_dir)
@@ -219,26 +295,14 @@ def main() -> int:
     }
     if missing_preprocess_patches:
         raise RuntimeError(f"Unable to patch upstream preprocessing safely: {missing_preprocess_patches}")
-    inputs = _validation_inputs(args.mode)
-    cmd = build_preprocess_command(mode=args.mode, batch_size=args.batch_size)
-    cache_status = preprocess_cache_status(args.mode)
-    payload: dict[str, Any] = {
-        "mode": args.mode,
-        "command": cmd,
-        "waymo_path": str(inputs["waymo_path"]),
-        "preprocess_path": str(inputs["preprocess_path"]),
-        "intention_path": str(inputs["intention_path"]),
-        "compat_sitecustomize": str(compat_sitecustomize),
-        "lightning_compat": lightning_compat,
-        "crdp_compat": crdp_compat,
-        "preprocess_multiprocessing_compat": preprocess_multiprocessing_compat,
-        "cache_status": cache_status,
-        "force": args.force,
-        "auto_force_partial": args.auto_force_partial,
-        "batch_size_override": args.batch_size,
-        "workers": args.workers,
-        "jax_platform": args.jax_platform,
-    }
+    payload.update(
+        {
+            "compat_sitecustomize": str(compat_sitecustomize),
+            "lightning_compat": lightning_compat,
+            "crdp_compat": crdp_compat,
+            "preprocess_multiprocessing_compat": preprocess_multiprocessing_compat,
+        }
+    )
     if args.dry_run:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

@@ -27,11 +27,17 @@ class ColabRunnerTests(unittest.TestCase):
         profiles = available_profiles()
         self.assertIn("full-eval-dry-run", profiles)
         self.assertIn("full-preprocess-status", profiles)
+        self.assertIn("full-preprocess-repair", profiles)
         self.assertIn("bootstrap-session", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
 
     def test_full_preprocess_status_has_no_heavy_steps_by_default(self) -> None:
         self.assertEqual(profile_steps("full-preprocess-status"), [])
+
+    def test_full_preprocess_repair_is_single_lightweight_step(self) -> None:
+        steps = profile_steps("full-preprocess-repair")
+        self.assertEqual([step.name for step in steps], ["full_preprocess_repair"])
+        self.assertIn("--repair-markers", " ".join(steps[0].command))
 
     def test_eval_profiles_bootstrap_upstream_before_running(self) -> None:
         steps = profile_steps("full-eval-dry-run")
@@ -81,6 +87,7 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("plot-smoke-reactive"))
         self.assertFalse(should_install_runtime_by_default("bootstrap-session"))
         self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
+        self.assertFalse(should_install_runtime_by_default("full-preprocess-repair"))
         self.assertTrue(should_install_runtime_by_default("full-eval-reactive"))
 
     def test_resolve_debug_root_uses_drive_project_sibling_of_results_runs(self) -> None:

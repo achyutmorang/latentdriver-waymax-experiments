@@ -28,6 +28,7 @@ NO_RUNTIME_SETUP_PROFILES = {
     "download-checkpoints",
     "stage-full-womd-validation",
     "full-preprocess-status",
+    "full-preprocess-repair",
     "full-eval-dry-run",
     "plot-smoke-reactive",
     "plot-smoke-non-reactive",
@@ -76,6 +77,7 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "smoke-eval-reactive": "Run all public checkpoints on smoke_reactive.",
     "smoke-eval-non-reactive": "Run all public checkpoints on smoke_non_reactive.",
     "full-preprocess-status": "Check full preprocess artifact paths without scanning the large cache directories.",
+    "full-preprocess-repair": "Recreate full preprocess `_SUCCESS` and manifest markers from existing files when the counts are already consistent.",
     "full-preprocess": "Run full validation preprocessing; use only when you intentionally want to rebuild/resume preprocessing.",
     "full-eval-dry-run": "Dry-run full_reactive evaluation for one model without launching simulation.",
     "full-eval-reactive-single": "Run one model on full_reactive.",
@@ -242,6 +244,20 @@ def profile_steps(
         ]
     if profile == "full-preprocess-status":
         return steps
+    if profile == "full-preprocess-repair":
+        return [
+            *steps,
+            RunnerStep(
+                name="full_preprocess_repair",
+                command=_script_command(
+                    "scripts/preprocess_validation_only.py",
+                    "--mode",
+                    "full",
+                    "--repair-markers",
+                ),
+                description="Repair full preprocess completion markers from existing filesystem counts.",
+            ),
+        ]
     if profile == "full-preprocess":
         return [
             *steps,
