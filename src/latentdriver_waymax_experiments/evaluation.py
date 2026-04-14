@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List
 
 from .artifacts import create_named_run_bundle, create_run_bundle, write_json
 from .config import load_config, resolve_repo_relative
+from .preprocess_archive import default_archive_path, extract_archive
 from .upstream import (
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
@@ -484,6 +485,30 @@ def materialize_preprocess_cache(
     target_preprocess = target_root / "val_preprocessed_path"
     target_intention = target_root / "val_intention_label"
     started_at = time.monotonic()
+    archive_path = default_archive_path(dataset_mode)
+    if archive_path.is_file():
+        print(f"[materialize] restoring preprocessed cache archive: {archive_path}", flush=True)
+        archive_payload = extract_archive(
+            mode=dataset_mode,
+            archive_path=archive_path,
+            target_root=_local_preprocess_root(),
+        )
+        _list_files_with_retries(target_preprocess / "map", label="archive-check:map")
+        _list_files_with_retries(target_preprocess / "route", label="archive-check:route")
+        _list_files_with_retries(target_intention, label="archive-check:intention")
+        summary = _progress_payload(completed=1, total=1, started_at=started_at)
+        return {
+            "enabled": True,
+            "strategy": "archive",
+            "dataset_mode": dataset_mode,
+            "archive": archive_payload,
+            "source_preprocess_path": str(preprocess_path),
+            "source_intention_path": str(intention_path),
+            "preprocess_path": str(target_preprocess),
+            "intention_path": str(target_intention),
+            "summary": summary,
+        }
+
     print(f"[materialize] staging preprocessed cache to local disk: {target_root}", flush=True)
     copy_stats = {
         "map": _copy_tree_incremental(preprocess_path / "map", target_preprocess / "map", label="map"),
@@ -509,6 +534,7 @@ def materialize_preprocess_cache(
     )
     return {
         "enabled": True,
+        "strategy": "incremental_copy",
         "dataset_mode": dataset_mode,
         "source_preprocess_path": str(preprocess_path),
         "source_intention_path": str(intention_path),

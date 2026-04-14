@@ -27,6 +27,9 @@ NO_RUNTIME_SETUP_PROFILES = {
     "env-check",
     "download-checkpoints",
     "stage-full-womd-validation",
+    "create-full-preprocess-archive",
+    "restore-full-preprocess-archive",
+    "full-preprocess-archive-status",
     "full-preprocess-status",
     "full-preprocess-repair",
     "full-eval-dry-run",
@@ -73,6 +76,9 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "install-runtime": "Install/patch the Colab runtime and editable project package.",
     "download-checkpoints": "Download or verify public evaluation checkpoints into the Drive-bound checkpoint cache.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
+    "create-full-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the full preprocessing cache.",
+    "restore-full-preprocess-archive": "Extract the Drive-backed full preprocessing archive into Colab local SSD.",
+    "full-preprocess-archive-status": "Inspect whether the full preprocessing archive exists and whether it has been restored locally.",
     "smoke-preprocess": "Run the smoke validation preprocessing command.",
     "smoke-eval-reactive": "Run all public checkpoints on smoke_reactive.",
     "smoke-eval-non-reactive": "Run all public checkpoints on smoke_non_reactive.",
@@ -213,6 +219,33 @@ def profile_steps(
                     "artifacts/assets/raw_womd",
                 ),
                 description="Stage all 150 full validation WOMD shards into the Drive-bound raw_womd cache.",
+            ),
+        ]
+    if profile == "full-preprocess-archive-status":
+        return [
+            *steps,
+            RunnerStep(
+                name="full_preprocess_archive_status",
+                command=_script_command("scripts/preprocess_cache_archive.py", "status", "--mode", "full"),
+                description="Inspect full preprocessing archive and local restore paths.",
+            ),
+        ]
+    if profile == "create-full-preprocess-archive":
+        return [
+            *steps,
+            RunnerStep(
+                name="create_full_preprocess_archive",
+                command=_script_command("scripts/preprocess_cache_archive.py", "create", "--mode", "full", "--force"),
+                description="Create a persistent Drive-backed tar archive of the full preprocessing cache.",
+            ),
+        ]
+    if profile == "restore-full-preprocess-archive":
+        return [
+            *steps,
+            RunnerStep(
+                name="restore_full_preprocess_archive",
+                command=_script_command("scripts/preprocess_cache_archive.py", "extract", "--mode", "full"),
+                description="Extract the persistent full preprocessing archive into local Colab SSD.",
             ),
         ]
     if profile == "smoke-preprocess":

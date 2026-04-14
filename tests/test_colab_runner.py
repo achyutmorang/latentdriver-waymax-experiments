@@ -30,6 +30,9 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("full-preprocess-repair", profiles)
         self.assertIn("bootstrap-session", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
+        self.assertIn("create-full-preprocess-archive", profiles)
+        self.assertIn("restore-full-preprocess-archive", profiles)
+        self.assertIn("full-preprocess-archive-status", profiles)
 
     def test_full_preprocess_status_has_no_heavy_steps_by_default(self) -> None:
         self.assertEqual(profile_steps("full-preprocess-status"), [])
@@ -77,6 +80,14 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("scripts/stage_womd_validation_shards.py", command)
         self.assertIn("--staging-root artifacts/assets/raw_womd", command)
 
+    def test_preprocess_archive_profiles_use_archive_cli(self) -> None:
+        create_steps = profile_steps("create-full-preprocess-archive")
+        restore_steps = profile_steps("restore-full-preprocess-archive")
+        status_steps = profile_steps("full-preprocess-archive-status")
+        self.assertIn("scripts/preprocess_cache_archive.py create --mode full --force", " ".join(create_steps[0].command))
+        self.assertIn("scripts/preprocess_cache_archive.py extract --mode full", " ".join(restore_steps[0].command))
+        self.assertIn("scripts/preprocess_cache_archive.py status --mode full", " ".join(status_steps[0].command))
+
     def test_bootstrap_session_runs_full_setup_sequence(self) -> None:
         steps = profile_steps("bootstrap-session")
         self.assertEqual(
@@ -90,6 +101,8 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("bootstrap-session"))
         self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
         self.assertFalse(should_install_runtime_by_default("full-preprocess-repair"))
+        self.assertFalse(should_install_runtime_by_default("create-full-preprocess-archive"))
+        self.assertFalse(should_install_runtime_by_default("restore-full-preprocess-archive"))
         self.assertTrue(should_install_runtime_by_default("full-eval-reactive"))
 
     def test_resolve_debug_root_uses_drive_project_sibling_of_results_runs(self) -> None:
