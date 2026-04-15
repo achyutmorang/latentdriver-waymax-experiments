@@ -29,6 +29,8 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("full-preprocess-status", profiles)
         self.assertIn("full-preprocess-repair", profiles)
         self.assertIn("bootstrap-session", profiles)
+        self.assertIn("probe-candidate-diversity", profiles)
+        self.assertIn("probe-candidate-diversity-single", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
         self.assertIn("create-full-preprocess-archive", profiles)
         self.assertIn("create-full-preprocess-shard-archives", profiles)
@@ -82,6 +84,15 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("scripts/stage_womd_validation_shards.py", command)
         self.assertIn("--staging-root artifacts/assets/raw_womd", command)
 
+    def test_candidate_diversity_profiles_bootstrap_upstream_but_skip_runtime_setup(self) -> None:
+        suite_steps = profile_steps("probe-candidate-diversity")
+        single_steps = profile_steps("probe-candidate-diversity-single", model="plant")
+        self.assertEqual([step.name for step in suite_steps], ["bootstrap_upstream", "probe_candidate_diversity"])
+        self.assertEqual([step.name for step in single_steps], ["bootstrap_upstream", "probe_candidate_diversity_plant"])
+        self.assertIn("--model latentdriver_t2_j3", " ".join(suite_steps[-1].command))
+        self.assertIn("--model plant", " ".join(suite_steps[-1].command))
+        self.assertIn("scripts/probe_candidate_diversity.py --model plant", " ".join(single_steps[-1].command))
+
     def test_preprocess_archive_profiles_use_archive_cli(self) -> None:
         create_steps = profile_steps("create-full-preprocess-archive")
         create_shards_steps = profile_steps("create-full-preprocess-shard-archives")
@@ -111,6 +122,8 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("full-eval-dry-run"))
         self.assertFalse(should_install_runtime_by_default("plot-smoke-reactive"))
         self.assertFalse(should_install_runtime_by_default("bootstrap-session"))
+        self.assertFalse(should_install_runtime_by_default("probe-candidate-diversity"))
+        self.assertFalse(should_install_runtime_by_default("probe-candidate-diversity-single"))
         self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
         self.assertFalse(should_install_runtime_by_default("full-preprocess-repair"))
         self.assertFalse(should_install_runtime_by_default("create-full-preprocess-archive"))

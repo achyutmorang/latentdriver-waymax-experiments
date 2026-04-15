@@ -26,6 +26,8 @@ NO_RUNTIME_SETUP_PROFILES = {
     "bootstrap-session",
     "env-check",
     "download-checkpoints",
+    "probe-candidate-diversity",
+    "probe-candidate-diversity-single",
     "stage-full-womd-validation",
     "create-full-preprocess-archive",
     "create-full-preprocess-shard-archives",
@@ -42,6 +44,8 @@ NO_RUNTIME_SETUP_PROFILES = {
 }
 UPSTREAM_REQUIRED_PROFILES = {
     "install-runtime",
+    "probe-candidate-diversity",
+    "probe-candidate-diversity-single",
     "smoke-preprocess",
     "smoke-eval-reactive",
     "smoke-eval-non-reactive",
@@ -77,6 +81,8 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "env-check": "Capture environment, git, GPU, and artifact status without running heavy commands.",
     "install-runtime": "Install/patch the Colab runtime and editable project package.",
     "download-checkpoints": "Download or verify public evaluation checkpoints into the Drive-bound checkpoint cache.",
+    "probe-candidate-diversity": "Inspect whether LatentDriver and PLANT expose rerankable candidate sets in the current repo wiring.",
+    "probe-candidate-diversity-single": "Inspect whether one configured model exposes rerankable candidate diversity in the current repo wiring.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
     "create-full-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the full preprocessing cache.",
     "create-full-preprocess-shard-archives": "Create resumable Drive-backed shard tar archives of the full preprocessing cache.",
@@ -208,6 +214,30 @@ def profile_steps(
                 name="download_checkpoints",
                 command=_script_command("scripts/download_checkpoints.py", "--evaluation-only"),
                 description="Download released evaluation checkpoints.",
+            ),
+        ]
+    if profile == "probe-candidate-diversity":
+        return [
+            *steps,
+            RunnerStep(
+                name="probe_candidate_diversity",
+                command=_script_command(
+                    "scripts/probe_candidate_diversity.py",
+                    "--model",
+                    "latentdriver_t2_j3",
+                    "--model",
+                    "plant",
+                ),
+                description="Inspect exposed candidate diversity for LatentDriver and PLANT.",
+            ),
+        ]
+    if profile == "probe-candidate-diversity-single":
+        return [
+            *steps,
+            RunnerStep(
+                name=f"probe_candidate_diversity_{model}",
+                command=_script_command("scripts/probe_candidate_diversity.py", "--model", model),
+                description=f"Inspect exposed candidate diversity for {model}.",
             ),
         ]
     if profile == "stage-full-womd-validation":

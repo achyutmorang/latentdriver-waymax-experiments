@@ -68,11 +68,11 @@ Reason:
 
 | Stage | Data | Purpose |
 | --- | --- | --- |
-| Pilot | 5 spread-out `validation_interactive` shards | Debug and initial evidence |
-| Main subset | 10 to 20 `validation_interactive` shards | GPU request and early paper-style tables |
+| Rapid prototyping subset | Fixed 10 `validation_interactive` shards | Default iteration loop for debugging, ablations, and early evidence |
+| Expanded subset | 20 or more `validation_interactive` shards | Stronger preliminary tables after the method stabilizes |
 | Full diagnostic | Full `validation_interactive`, then regular validation | Stronger final claim |
 
-A 5-shard run is a pilot. It should not be presented as final evidence.
+A fixed 10-shard subset is the current rapid-prototyping regime. It is useful for iteration and early evidence, but it should still not be presented as final evidence.
 
 ### 4.3 Sampling Note
 
@@ -394,9 +394,9 @@ Expected output:
 
 Goal:
 
-Run IDM and LatentDriver on 5 spread-out `validation_interactive` shards.
+Run IDM and LatentDriver on a fixed 10-shard `validation_interactive` subset.
 
-Example shard set:
+Example fixed shard set:
 
 ```text
 0, 30, 60, 90, 120
@@ -428,7 +428,7 @@ on the exact same pilot subset.
 
 Goal:
 
-Scale to 10 to 20 `validation_interactive` shards.
+Stay on the fixed 10-shard subset until the metric and method stabilize, then expand to 20 or more `validation_interactive` shards.
 
 This is the right level for preliminary paper-style evidence and GPU cluster justification.
 
@@ -483,7 +483,7 @@ I am building a diagnostic closed-loop planner evaluation protocol using WOMD in
 3. Export per-scenario metrics from Waymax/LatentDriver rollouts.
 4. Implement bucket assignment from metadata.
 5. Implement BaseScore and Balanced CS-SP.
-6. Run IDM vs LatentDriver on 5 spread-out interaction shards.
+6. Run IDM vs LatentDriver on the fixed 10-shard interaction subset.
 7. Use the result to select the first method intervention.
 8. Implement a minimal risk-aware candidate selector.
 9. Run LatentDriver vs YourMethod on the same subset.
@@ -576,8 +576,8 @@ Use these roles:
 
 | Split or subset | Allowed use |
 | --- | --- |
-| `validation_interactive_pilot_5_shards` | Debugging, proof of feasibility, initial GPU request evidence |
-| `validation_interactive_main_10_to_20_shards` | Method development and ablation |
+| `validation_interactive_proto_10_shards` | Rapid prototyping, debugging, and early evidence |
+| `validation_interactive_expanded_20_plus_shards` | Stronger preliminary method development and ablation |
 | `validation_interactive_frozen_holdout` | Final validation claim after method is fixed |
 | `testing_interactive` | Only for official benchmark-style final evaluation, not iterative development |
 
@@ -943,9 +943,9 @@ Use compute in stages.
 | Stage | Planners | Data | Purpose |
 | --- | --- | --- | --- |
 | `S0` | IDM only | 1 shard | Pipeline sanity |
-| `S1` | IDM + LatentDriver | 5 shards | Pilot comparison |
-| `S2` | LatentDriver + oracle method | 5 shards | Test method idea |
-| `S3` | LatentDriver + proxy method | 10 shards | Main preliminary evidence |
+| `S1` | IDM + LatentDriver | 10 shards | Baseline rapid-prototyping comparison |
+| `S2` | LatentDriver + oracle method | 10 shards | Test the method idea on the same fixed subset |
+| `S3` | LatentDriver + proxy method | 10 shards | Main rapid-prototyping evidence |
 | `S4` | IDM + LatentDriver + proxy method | 20 shards | GPU request / thesis committee evidence |
 | `S5` | Full suite | full split | Final result |
 

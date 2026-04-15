@@ -1,16 +1,26 @@
 # LatentDriver Waymax Experiments
 
-Reproducible evaluation-first repository for **LatentDriver-family public checkpoints** on **Waymax**, with thin Colab notebooks, Drive-backed persistence, and standardized metric/visualization outputs.
+Research repository for **closed-loop planner evaluation and method development** on **Waymax**, starting from LatentDriver-family public checkpoints and moving toward causal-semantic planner diagnostics, risk-aware reranking, and reproducible baseline-vs-method comparisons.
 
 ## Goal
 
-This repo is built for one narrow contract first:
+This repo has two connected goals.
+
+First, establish a reproducible evaluation contract:
 
 - use only **publicly released checkpoints**,
 - keep **Waymax settings identical across models**,
 - evaluate under both **reactive** (`idm`) and **non-reactive** (`expert`) NPC settings,
-- reproduce the paper’s reported metrics as closely as possible,
-- add a small but meaningful extension: **seed/scenario consistency diagnostics** and visualization under the same evaluation stack.
+- reproduce the paper's reported metrics as closely as possible,
+- persist metrics, debug bundles, and visualization artifacts under one runner workflow.
+
+Second, extend the reproduction into a research contribution:
+
+- build a **causal-semantic closed-loop planner evaluation** protocol,
+- compare `IDM -> LatentDriver -> YourMethod` on paired scenario IDs,
+- combine WOMD-Reasoning and CausalAgents as an evaluation metadata layer,
+- define and test a **Causal-Semantic Safety Progress** (`CS-SP`) metric,
+- add modular planner improvements such as frozen-generator **risk-aware candidate reranking** before any full fine-tuning.
 
 ## Public Checkpoints Covered
 
@@ -32,6 +42,11 @@ Use the single runner notebook as the default execution surface:
 
 The notebook is intentionally thin. It handles Colab-specific handshakes such as Drive mount and GCS auth, then delegates the actual workflow to CLI profiles.
 
+## Research Strategy Docs
+
+- [Causal-semantic planner evaluation strategy](./docs/causal_semantic_planner_evaluation_strategy.md)
+- [Modular evaluator, reranking, and lightweight adaptation plan](./docs/inspiration_implementation_plan.md)
+
 ## Milestones
 
 - [x] Smoke preprocessing produces reusable validation artifacts.
@@ -42,13 +57,21 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 - [x] Full preprocessing writes durable `_SUCCESS` and `preprocess_manifest.json` markers.
 - [x] Full eval dry-run passes with no missing inputs.
 - [x] Full evaluation profiles are resumable at shard granularity.
-- [ ] One full reactive model run completes end-to-end.
-- [ ] One full non-reactive model run completes end-to-end.
-- [ ] Full reactive suite completes for all public evaluation checkpoints.
-- [ ] Full non-reactive suite completes for all public evaluation checkpoints.
-- [ ] Full-dataset comparison plots are generated for reactive and non-reactive tiers.
-- [ ] Scenario-bucket analysis is added for intention classes and failure modes.
-- [ ] First research intervention is selected after baseline reproduction is stable.
+- [x] Full preprocess shard archive workflow is available for faster and safer Colab restores.
+- [x] Causal-semantic planner evaluation strategy is documented.
+- [ ] Verify WOMD-Reasoning `sid` overlap with CausalAgents `scenario_id`.
+- [ ] Add `validation_interactive` subset support to the evaluation contract.
+- [ ] Export per-scenario rollout metrics, not only aggregate metrics.
+- [ ] Run IDM vs LatentDriver on a fixed 10-shard `validation_interactive` rapid-prototyping subset.
+- [ ] Implement bucket assignment for causal-semantic diagnostics.
+- [ ] Implement `CS-SP` base score and balanced bucket aggregation.
+- [x] Inspect LatentDriver/PlanT candidate output availability.
+- [ ] Add candidate dump support for at least one planner.
+- [ ] Run native selector vs no-training risk-aware reranker.
+- [ ] Choose first method intervention from pilot diagnostics.
+- [ ] Run LatentDriver vs YourMethod on the same paired subset.
+- [ ] Expand beyond the fixed 10-shard prototyping subset once the method and metric stabilize.
+- [ ] Run full reactive and non-reactive suites after the method and metric are frozen.
 
 ## Run Matrix
 
@@ -57,16 +80,20 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `smoke_reactive` | One-shard validation subset | Reactive IDM agents | Public evaluation checkpoints | Fast end-to-end simulator, checkpoint, metrics, and plotting validation. | Done |
 | `smoke_non_reactive` | One-shard validation subset | Expert replay agents | Public evaluation checkpoints | Fast comparison against non-reactive replay-style traffic. | Done |
 | `full_preprocess` | Full WOMD validation split | Not applicable | Not applicable | Build durable map, route, and intention-label caches used by all full evaluations. | Done |
-| `create-full-preprocess-shard-archives` | Completed full preprocess cache | Not applicable | Not applicable | Pack the many small Drive-backed preprocess files into 150 resumable tar parts for faster and safer Colab restores. | Next |
+| `create-full-preprocess-shard-archives` | Completed full preprocess cache | Not applicable | Not applicable | Pack the many small Drive-backed preprocess files into 150 resumable tar parts for faster and safer Colab restores. | Done |
 | `full_eval_dry_run` | Full validation config only | Reactive by default | One selected checkpoint | Verify all paths, markers, checkpoint bindings, GCS auth, and command construction before expensive simulation. | Done |
-| `full_reactive_single` | Full WOMD validation split | Reactive IDM agents | One selected checkpoint | First scientifically meaningful full-scale simulation run; validates runtime stability before launching suites. | Next |
+| `validation_interactive_pilot` | Fixed 10 interaction shards | Reactive IDM agents | IDM + LatentDriver | Default rapid-prototyping and iteration subset for causal-semantic evaluation. | Next |
+| `metadata_join_check` | WOMD-Reasoning + CausalAgents | Not applicable | Not applicable | Verify scenario and agent ID compatibility for causal-semantic buckets. | Next |
+| `candidate_dump` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Determine whether frozen planners expose candidate trajectories for reranking. | Planned |
+| `risk_aware_rerank` | Pilot subset | Reactive IDM agents | LatentDriver baseline vs reranked variant | Test no-training method improvement on `CS-SP`. | Planned |
+| `full_reactive_single` | Full WOMD validation split | Reactive IDM agents | One selected checkpoint | Full-scale closed-loop validation after pilot signal and runtime stability. | Planned |
 | `full_non_reactive_single` | Full WOMD validation split | Expert replay agents | One selected checkpoint | Paired baseline for isolating model behavior without closed-loop NPC reactions. | Planned |
 | `full_reactive` | Full WOMD validation split | Reactive IDM agents | All public evaluation checkpoints | Main closed-loop benchmark for model comparison under interactive traffic. | Planned |
 | `full_non_reactive` | Full WOMD validation split | Expert replay agents | All public evaluation checkpoints | Replay-style benchmark for measuring model behavior under fixed surrounding traffic. | Planned |
 | `plot_full_reactive` | Completed full reactive runs | Not applicable | All completed models | Generate comparable CSV, JSON, and PNG summaries from saved run bundles. | Planned |
 | `plot_full_non_reactive` | Completed full non-reactive runs | Not applicable | All completed models | Generate paired non-reactive comparison artifacts. | Planned |
 
-Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **full run** is the reproducible validation benchmark. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which is useful for isolating ego-policy behavior from feedback effects. A **single-model full run** is the operational gate before spending compute on all checkpoints, while a **suite run** is the actual comparison layer. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
+Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **validation-interactive pilot** is the first research diagnostic because it targets interaction-heavy scenarios. For now, that pilot is a fixed **10-shard rapid-prototyping subset** so method iteration stays cheap and reproducible. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which helps separate ego-policy quality from feedback effects. A **candidate reranking run** tests whether a frozen pretrained planner can be improved by a better selector before training any new backbone. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
 
 ## Evaluation Contract
 
@@ -91,13 +118,32 @@ Primary metrics:
 
 These are recovered from the upstream metric object and written as machine-readable JSON by the local patch layer.
 
+Research metrics to add:
+
+- per-scenario collision, offroad, progress, and route completion,
+- optional TTC, clearance, and comfort diagnostics,
+- `CS-SP` base score: safety gate times progress utility,
+- balanced bucket-level `CS-SP` across causal-semantic regimes,
+- paired deltas for `IDM -> LatentDriver` and `LatentDriver -> YourMethod`.
+
 ## Important Boundary
 
-This repo is **evaluation-only first**. It does **not** train LatentDriver or PlanT. The first milestone is:
+This repo is **frozen-planner first**. It does **not** start by training LatentDriver or PlanT. The first research milestone is:
 
-- reproduce runnable evaluation for the released checkpoints,
-- capture metrics and visualization under one standardized Waymax contract,
-- then add consistency diagnostics on top.
+- reproduce runnable evaluation for released checkpoints,
+- capture per-scenario metrics and visualization under one standardized Waymax contract,
+- build causal-semantic diagnostic evaluation,
+- test no-training reranking on frozen planner candidates,
+- only then consider lightweight scorer or adapter fine-tuning.
+
+Full backbone fine-tuning is intentionally not the first method step. The preferred ladder is:
+
+```text
+frozen planner + native selector
+-> frozen planner + explicit risk-aware selector
+-> frozen planner + small learned scorer or adapter
+-> full fine-tuning only if earlier stages show signal
+```
 
 ## Patch Boundary
 
