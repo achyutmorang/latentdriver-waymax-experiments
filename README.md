@@ -46,6 +46,7 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 
 - [Causal-semantic planner evaluation strategy](./docs/causal_semantic_planner_evaluation_strategy.md)
 - [Modular evaluator, reranking, and lightweight adaptation plan](./docs/inspiration_implementation_plan.md)
+- [Risk-aware action modulation research note](./docs/risk_aware_action_modulation_research.md)
 
 ## Milestones
 
