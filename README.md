@@ -1,6 +1,6 @@
 # LatentDriver Waymax Experiments
 
-Research repository for **closed-loop planner evaluation and method development** on **Waymax**, starting from LatentDriver-family public checkpoints and moving toward causal-semantic planner diagnostics, risk-aware reranking, and reproducible baseline-vs-method comparisons.
+Research repository for **closed-loop planner evaluation and method development** on **Waymax**, starting from LatentDriver-family public checkpoints and moving toward causal-semantic planner diagnostics, risk-aware action modulation, and reproducible baseline-vs-method comparisons.
 
 ## Goal
 
@@ -20,7 +20,7 @@ Second, extend the reproduction into a research contribution:
 - compare `IDM -> LatentDriver -> YourMethod` on paired scenario IDs,
 - join WOMD-Reasoning and CausalAgents **after rollout** as an evaluation metadata layer while planner inputs remain plain WOMD,
 - define and test a **Causal-Semantic Safety Progress** (`CS-SP`) metric,
-- add modular planner improvements such as frozen-generator **risk-aware candidate reranking** before any full fine-tuning.
+- add modular planner improvements such as a frozen-planner **risk-aware action modulation** layer before any full fine-tuning.
 
 ## Public Checkpoints Covered
 
@@ -67,9 +67,14 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 - [ ] Join completed 10-shard rollout outputs with WOMD-Reasoning and CausalAgents for post-rollout diagnostic insight.
 - [ ] Implement bucket assignment for causal-semantic diagnostics.
 - [ ] Implement `CS-SP` base score and balanced bucket aggregation.
+- [ ] Add a planner-agnostic runtime modulation hook between planner action output and `Waymax` environment step.
+- [ ] Implement heuristic risk-aware action modulation using TTC, interaction density, and action magnitude proxies.
+- [ ] Generate short-horizon ghost-rollout labels for scaled-action risk supervision.
+- [ ] Train a lightweight learned risk-aware action modulator on frozen-planner rollout data.
+- [ ] Run native planner vs heuristic modulator vs learned modulator on the same paired subset.
 - [x] Inspect LatentDriver/PlanT candidate output availability.
-- [ ] Add candidate dump support for at least one planner.
-- [ ] Run native selector vs no-training risk-aware reranker.
+- [ ] Add candidate dump support for at least one planner for optional LatentDriver-specific studies.
+- [ ] Run LatentDriver native selector vs optional no-training risk-aware reranker after the modulation path is stable.
 - [ ] Choose first method intervention from pilot diagnostics.
 - [ ] Run LatentDriver vs YourMethod on the same paired subset.
 - [ ] Expand beyond the fixed 10-shard prototyping subset once the method and metric stabilize.
@@ -86,8 +91,11 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `full_eval_dry_run` | Full validation config only | Reactive by default | One selected checkpoint | Verify all paths, markers, checkpoint bindings, GCS auth, and command construction before expensive simulation. | Done |
 | `validation_interactive_pilot` | Fixed 10 interaction shards | Reactive IDM agents | IDM + LatentDriver | Run the planners on plain WOMD `validation_interactive`; keep the model input contract unchanged. | Next |
 | `metadata_join_check` | WOMD-Reasoning + CausalAgents over completed pilot outputs | Not applicable | Not applicable | Verify scenario and agent ID compatibility, then attach the causal-semantic overlay after rollout. | Next |
-| `candidate_dump` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Determine whether frozen planners expose candidate trajectories for reranking. | Planned |
-| `risk_aware_rerank` | Pilot subset | Reactive IDM agents | LatentDriver baseline vs reranked variant | Test no-training method improvement on `CS-SP`. | Planned |
+| `risk_aware_modulation_heuristic` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Test a no-training TTC plus density based action scaler on frozen planners. | Planned |
+| `risk_aware_modulation_labels` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Generate short-horizon ghost-rollout supervision for scaled-action risk prediction. | Planned |
+| `risk_aware_modulation_learned` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Test a lightweight learned action modulator on `CS-SP`. | Planned |
+| `candidate_dump` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Determine whether frozen planners expose candidate trajectories for optional reranking studies. | Planned |
+| `risk_aware_rerank` | Pilot subset | Reactive IDM agents | LatentDriver baseline vs reranked variant | Optional LatentDriver-specific follow-on after the modulation path is stable. | Planned |
 | `full_reactive_single` | Full WOMD validation split | Reactive IDM agents | One selected checkpoint | Full-scale closed-loop validation after pilot signal and runtime stability. | Planned |
 | `full_non_reactive_single` | Full WOMD validation split | Expert replay agents | One selected checkpoint | Paired baseline for isolating model behavior without closed-loop NPC reactions. | Planned |
 | `full_reactive` | Full WOMD validation split | Reactive IDM agents | All public evaluation checkpoints | Main closed-loop benchmark for model comparison under interactive traffic. | Planned |
@@ -95,7 +103,7 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `plot_full_reactive` | Completed full reactive runs | Not applicable | All completed models | Generate comparable CSV, JSON, and PNG summaries from saved run bundles. | Planned |
 | `plot_full_non_reactive` | Completed full non-reactive runs | Not applicable | All completed models | Generate paired non-reactive comparison artifacts. | Planned |
 
-Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **validation-interactive pilot** is the first research diagnostic because it targets interaction-heavy scenarios. For now, that pilot is a fixed **10-shard rapid-prototyping subset** run on plain WOMD `validation_interactive`, with the causal-semantic layer attached only **after rollout** for analysis. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which helps separate ego-policy quality from feedback effects. A **candidate reranking run** tests whether a frozen pretrained planner can be improved by a better selector before training any new backbone. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
+Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **validation-interactive pilot** is the first research diagnostic because it targets interaction-heavy scenarios. For now, that pilot is a fixed **10-shard rapid-prototyping subset** run on plain WOMD `validation_interactive`, with the causal-semantic layer attached only **after rollout** for analysis. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which helps separate ego-policy quality from feedback effects. A **risk-aware modulation run** tests whether a frozen pretrained planner can be improved by a lightweight runtime action scaler without retraining the backbone. A **candidate reranking run** is now a later, planner-specific branch rather than the main first method path. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
 
 ## Evaluation Contract
 
@@ -136,15 +144,17 @@ This repo is **frozen-planner first**. It does **not** start by training LatentD
 - reproduce runnable evaluation for released checkpoints,
 - capture per-scenario metrics and visualization under one standardized Waymax contract on plain WOMD `validation_interactive`,
 - join completed rollout outputs with causal-semantic metadata after validation for useful diagnostic insight,
-- test no-training reranking on frozen planner candidates,
-- only then consider lightweight scorer or adapter fine-tuning.
+- test no-training risk-aware action modulation on frozen planner outputs,
+- then train a lightweight learned risk head or modulator if the heuristic path shows signal,
+- and only later consider planner-specific reranking or lightweight scorer adaptation.
 
 Full backbone fine-tuning is intentionally not the first method step. The preferred ladder is:
 
 ```text
-frozen planner + native selector
--> frozen planner + explicit risk-aware selector
--> frozen planner + small learned scorer or adapter
+frozen planner + native action
+-> frozen planner + explicit risk-aware action modulator
+-> frozen planner + small learned risk head or modulator
+-> planner-specific reranking or hybrid selector plus modulator if needed
 -> full fine-tuning only if earlier stages show signal
 ```
 

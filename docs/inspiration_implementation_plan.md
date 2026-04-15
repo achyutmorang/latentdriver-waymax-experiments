@@ -1,180 +1,190 @@
-# Implementation Plan: Modular Evaluation, Reranking, and Lightweight Adaptation for LatentDriver on Waymax
+# Implementation Plan: Risk-Aware Action Modulation and Lightweight Adaptation for Pretrained Planners on Waymax
 
 ## Problem Restatement
 
-This repo currently targets **evaluation-only replication** of public LatentDriver-family checkpoints on Waymax.
+This repo already supports evaluation-first reproduction of public LatentDriver-family checkpoints on Waymax.
 
-The next step is to turn it into a **research substrate** without losing the evaluation contract. We want to borrow the strongest portable ideas from:
+The next step is not full retraining. It is to turn the repo into a research substrate for:
 
-- **Diffusion-Planner**: modular guidance and reward composition,
-- **Plan-R1**: explicit verifiable reward decomposition and grouped multi-sample reasoning,
-- **RIFT**: freeze the pretrained generator, evaluate multiple rollout candidates, and improve the scoring/reranking layer instead of retraining the whole model first.
+- causal-semantic closed-loop evaluation,
+- planner-agnostic post-hoc safety-performance intervention,
+- and later lightweight adaptation if the intervention shows signal.
 
-The right implementation target is therefore:
+The strongest current implementation target is:
 
-> keep the pretrained LatentDriver-family generators fixed, add a planner-agnostic evaluator/reranker layer, and only later consider lightweight scorer adaptation if the no-training reranking baselines show signal.
+> keep the pretrained planners frozen, add a runtime risk-aware action modulation layer on top of their output actions, evaluate it under the fixed Waymax contract, and only later consider planner-specific reranking or small learned adapters.
+
+This is narrower and more portable than immediately optimizing LatentDriver-specific candidate reranking.
 
 ## Known vs Unknown
 
 ### Known
 
-- We already have a pinned upstream LatentDriver fork and an evaluation-first repo.
-- The repo already supports:
-  - public checkpoint download,
-  - smoke/full validation preprocessing,
-  - standardized Waymax evaluation,
-  - Drive-backed Colab execution,
-  - visualization artifacts.
-- Public baselines in scope today:
-  - `latentdriver_t2_j3`
-  - `latentdriver_t2_j4`
-  - `plant`
-  - `easychauffeur_ppo`
+- The repo already supports public checkpoint evaluation, smoke and full preprocessing, resumable full evaluation, and Colab runner profiles.
+- The current rapid-prototyping protocol is a fixed 10-shard plain WOMD `validation_interactive` subset.
+- Causal-semantic metadata is attached after rollout, not injected into planner inputs.
+- The current repo wiring exposes a shared waypoint-delta action interface for both LatentDriver and the PlanT baseline:
+  - action shape is `[dx, dy, dyaw]`
+  - action range is defined in:
+    - `external/LatentDriver/configs/method/latentdriver.yaml`
+    - `external/LatentDriver/configs/method/planT.yaml`
+- The runtime insertion point is available in:
+  - `external/LatentDriver/simulator/engines/ltd_simulator.py`
+  - between `model.get_predictions(...)` and `env.step(...)`
 
 ### Unknown
 
-- Whether the current upstream evaluation path exposes enough **candidate-level outputs** to support reranking without extra patching.
-- Whether LatentDriver exposes:
-  - multiple candidate trajectories,
-  - mode logits,
-  - or only the final selected action/trajectory.
-- Whether seed-to-seed variation and candidate-to-candidate variation are large enough to justify group-relative scoring.
+- Whether simple TTC and density heuristics are already enough to improve the safety-progress tradeoff.
+- Whether scalar action scaling is too blunt for turn-heavy scenarios.
+- How much short-horizon ghost-rollout supervision is needed before a learned modulator beats heuristic baselines.
+- Whether the learned modulator transfers cleanly across both LatentDriver and PlanT.
 
 ### Most fragile assumption
 
-The most fragile assumption is that the upstream LatentDriver evaluation path already exposes enough candidate diversity to support meaningful reranking. If it does not, we need a narrow upstream patch to dump candidate hypotheses before any reranking study is valid.
+The most fragile assumption is that a lightweight action-scaling wrapper can improve collision and offroad behavior without collapsing progress in turns, merges, and dense interactions. If scalar modulation causes strong over-conservatism, the method must move to anisotropic scaling or a hybrid selector-plus-modulator design.
 
 ## First-Principles Model
 
-The portable abstraction across LatentDriver, PlanT, and any future planner in this repo is:
+The portable abstraction across LatentDriver, PlanT, and future planners in this repo is:
 
 1. **Generator**
-   - pretrained model that proposes one or more candidate ego futures.
-2. **Evaluator**
-   - explicit metrics over a completed candidate rollout.
-3. **Selector**
-   - rule or learned scorer that chooses among candidates.
+   - frozen pretrained planner producing an ego action.
+2. **Runtime risk encoder**
+   - features derived from current simulator state plus proposed ego action.
+3. **Modulator**
+   - maps risk features to a scale or correction for the ego action.
 4. **Simulation contract**
-   - fixed Waymax setup, fixed data split, fixed NPC control mode, fixed metrics schema.
+   - fixed Waymax setup, fixed split, fixed NPC policy, fixed output schema.
+5. **Post-rollout evaluator**
+   - standard metrics plus causal-semantic overlay and `CS-SP`.
 
-This means the cleanest experimentation path is:
+This leads to the cleanest sequence:
 
-- do **not** modify the generator first,
-- standardize the evaluator,
-- compare selectors,
-- only then consider lightweight scorer fine-tuning.
+- do not change the planner first,
+- export per-scenario outputs,
+- add a runtime modulator around planner actions,
+- compare default vs heuristic modulator vs learned modulator,
+- only then consider planner-specific reranking or learned scorer heads.
 
-## What We Borrow From Each Project
+## What We Borrow From Prior Work
 
-### 1. Diffusion-Planner
-
-Borrow:
-
-- a **registry/config/composer** pattern for score modules,
-- dual-use modules that work as:
-  - evaluation metrics,
-  - reranking scores,
-  - and later lightweight training rewards.
-
-Do not borrow first:
-
-- the diffusion backbone,
-- ROS/autoware pipeline,
-- full RLVR training stack.
-
-### 2. Plan-R1
+### 1. Runtime safety layers
 
 Borrow:
 
-- **verifiable reward decomposition** into interpretable components,
-- **K-sample grouped evaluation**,
-- hybrid thinking: learned generator + explicit evaluator.
+- minimal post-hoc action correction,
+- state-dependent intervention intensity,
+- keeping the strong base controller intact.
+
+Most aligned sources:
+
+- Dalal et al. safety layers,
+- SafetyNet-style fallback logic,
+- control-barrier-filter thinking.
 
 Do not borrow first:
 
-- full tokenized planner architecture,
-- nuPlan-specific data pipeline.
+- full CBF-QP machinery,
+- deployment-grade rule stacks,
+- planner replacement.
 
-### 3. RIFT
+### 2. Predictive runtime monitoring
 
 Borrow:
 
-- **freeze generator, improve scorer**,
-- **group-relative advantage / relative ranking over candidate rollouts**,
-- critical-actor-focused interaction evaluation.
+- short-horizon future-risk estimation,
+- intervene before overlap or offroad actually occurs,
+- use the simulator to create labels for near-future failure.
 
 Do not borrow first:
 
-- CARLA environment stack,
-- controllable background-vehicle training,
-- full CBV fine-tuning loop.
+- formal runtime verification frameworks,
+- complex intent inference models.
+
+### 3. Diffusion and reranking papers
+
+Borrow:
+
+- modular reward and score composition,
+- explicit decomposition of safety and progress objectives,
+- freeze-generator-first philosophy,
+- optional planner-specific candidate reranking later.
+
+Do not borrow first:
+
+- diffusion backbones,
+- full RL fine-tuning,
+- planner-specific architectural rewrites.
 
 ## Chosen Design
 
-We should extend this repo in **three layers**, in order:
+We should extend this repo in **four layers**, in order:
 
-1. **Standardized evaluator layer**
+1. **Standardized evaluator and per-scenario logging**
    - explicit reusable metric modules,
    - no training,
    - no backbone changes.
-2. **No-training reranking baselines**
-   - weighted-score reranking,
-   - best-of-K upper bound,
-   - group-relative score normalization.
-3. **Optional lightweight scorer adaptation**
-   - only if the reranking baselines show clear signal,
-   - freeze backbone,
-   - train a tiny scorer head on candidate features.
+2. **No-training heuristic action modulation**
+   - TTC,
+   - interaction density,
+   - action-magnitude-aware scaling.
+3. **Ghost-rollout label generation plus lightweight learned modulator**
+   - frozen planner,
+   - short-horizon simulator-consistent targets,
+   - tiny risk head or direct scale predictor.
+4. **Optional planner-specific branches**
+   - LatentDriver candidate reranking,
+   - hybrid rerank-plus-modulate experiments,
+   - small learned scorer or adapter if justified.
 
-This is the lowest-risk route that still leaves room for publishable extensions.
+This is the lowest-risk path that still gives a cross-planner method contribution.
 
 ## Repository-Level Plan
 
-## Phase 0: Finish Replication Contract
+## Phase 0: Keep the Evaluation Contract Stable
 
 ### Goal
 
-Get one clean end-to-end evaluation and visualization path for the public checkpoints under fixed Waymax settings.
+Preserve one clean end-to-end evaluation path for public checkpoints under fixed Waymax settings.
 
 ### Already in repo
 
 - assets notebook,
 - preprocessing notebook,
 - evaluation notebook,
-- visualization notebook.
+- visualization notebook,
+- candidate-diversity probe,
+- metadata join checker,
+- causal-semantic evaluation strategy,
+- risk-aware action modulation research note.
 
 ### Exit criteria
 
-- smoke preprocessing succeeds,
-- smoke evaluation succeeds,
-- at least one MP4/PDF visualization artifact exists,
-- metrics are persisted to Drive,
-- public checkpoint paths are reproducible.
+- smoke and full preprocessing remain reproducible,
+- pilot and full evaluation paths remain stable,
+- metrics and run manifests stay machine-readable,
+- no planner input schema change is needed for the first method study.
 
 ## Phase 1: Add a Modular Evaluator Library
 
 ### Goal
 
-Create a portable, explicit evaluator that can score any completed rollout or candidate rollout using reusable components.
+Create a portable evaluator that can score completed rollouts and later short ghost rollouts using reusable components.
 
 ### New modules to add
 
 - `src/latentdriver_waymax_experiments/evaluator/base.py`
-  - base interface for all score modules
 - `src/latentdriver_waymax_experiments/evaluator/registry.py`
-  - module registration
 - `src/latentdriver_waymax_experiments/evaluator/config.py`
-  - JSON-serializable evaluator config
 - `src/latentdriver_waymax_experiments/evaluator/composer.py`
-  - combine active modules into a total score
 - `src/latentdriver_waymax_experiments/evaluator/modules/`
   - `collision.py`
   - `offroad.py`
   - `progress.py`
   - `min_ttc.py`
+  - `interaction_density.py`
   - `min_clearance.py`
   - `comfort.py`
-  - `consistency.py`
 
 ### Score semantics
 
@@ -183,198 +193,315 @@ Each module should expose:
 - `metric(...)`
   - report-time scalar for analysis,
 - `score(...)`
-  - normalized value suitable for reranking,
+  - normalized value suitable for ghost-rollout ranking,
 - optional `weight`
   - used by the composer.
 
 ### Why this comes first
 
-Without a stable evaluator, every later reranking or adaptation result is under-specified.
+Without a stable evaluator, the modulation objective and ghost-rollout labels are under-specified.
 
 ### Exit criteria
 
 - evaluator config serializes to JSON,
-- a single rollout can be scored with per-module outputs plus total score,
+- one rollout can be scored with per-module outputs and total score,
 - outputs are written into the run artifact tree.
 
-## Phase 2: Add Candidate-Level Collection
+## Phase 2: Export Per-Scenario Pilot Artifacts
 
 ### Goal
 
-Patch the upstream evaluation path, if necessary, so the repo can capture **candidate-level outputs**, not just final metrics.
+Make the 10-shard pilot useful for both causal-semantic analysis and modulator training.
 
-### Key question
+### Required outputs
 
-Do the public LatentDriver and PlanT evaluation paths already expose:
-
-- multiple trajectory hypotheses,
-- mode logits,
-- or only the final selected trajectory?
-
-### If candidate outputs already exist
-
-- normalize them into a local schema.
-
-### If candidate outputs do not exist
-
-Add a narrow patch layer to save:
-
-- candidate trajectories,
-- candidate scores/logits if available,
-- selected index,
-- rollout-level metadata.
-
-### Proposed schema
-
-- `candidate_rollouts.npz`
-  - `trajectories`
-  - `scores_raw`
-  - `selected_index`
-  - `scene_id`
-  - `seed`
-  - `npc_policy_type`
-
-### Exit criteria
-
-- for at least one model, one scene, and one seed, the repo can save K candidate rollouts plus the final selected rollout.
-
-## Phase 3: Add No-Training Reranking Baselines
-
-### Goal
-
-Test whether explicit reranking can improve behavior without retraining the backbone.
-
-### Baselines
-
-1. **Native selector**
-   - whatever the upstream model already chooses.
-2. **Best-of-K oracle**
-   - choose the best candidate using future knowledge under the evaluator.
-   - upper bound only, not deployable.
-3. **Weighted explicit reranker**
-   - choose candidate with highest weighted evaluator score.
-4. **Group-relative reranker**
-   - normalize candidate scores within the same scene:
-     - z-score,
-     - centered score,
-     - or percentile rank.
-5. **Critical-actor-focused reranker**
-   - emphasize interaction metrics only for the most relevant nearby agents.
-
-### New scripts
-
-- `scripts/run_candidate_dump.py`
-- `scripts/run_rerank_eval.py`
-- `scripts/run_group_relative_eval.py`
-
-### New notebook
-
-- `notebooks/latentdriver_rerank_colab.ipynb`
-
-### Metrics to compare
-
-- existing Waymax metrics:
-  - `mAR[75:95]`
-  - `AR[75:95]`
-  - `collision_rate`
-  - `offroad_rate`
-  - `progress_rate`
-- new diagnostics:
-  - minimum TTC distribution,
-  - minimum clearance distribution,
-  - score variance across candidates,
-  - seed-to-seed consistency.
-
-### Exit criteria
-
-- one no-training reranker shows a visible difference relative to native selection,
-- the result is reproducible on a fixed smoke/dev slice.
-
-## Phase 4: Add Consistency and Variance Diagnostics
-
-### Goal
-
-Measure whether public baselines are stable across seeds, scenes, and candidate sets.
-
-### New scripts
-
-- `scripts/run_seed_consistency_study.py`
-- `scripts/run_candidate_variance_study.py`
-
-### New notebook
-
-- `notebooks/latentdriver_consistency_colab.ipynb`
-
-### Diagnostics to store
-
-- per-scene metric spread,
-- per-scene minimum TTC spread,
-- per-scene minimum clearance spread,
-- selected-candidate instability,
-- candidate-score disagreement.
+- per-scenario metrics,
+- per-step ego actions,
+- per-step simulator state summary,
+- run manifests keyed by `scenario_id`,
+- optional compact feature dumps for training the modulator.
 
 ### Why this matters
 
-This is the first small extension that can already be publishable as an empirical reliability finding, even before any adaptation.
-
-## Phase 5: Optional Lightweight Scorer Adaptation
-
-### Goal
-
-If reranking works, train a tiny scorer on top of frozen candidate features.
-
-### Constraint
-
-No full LatentDriver retraining first.
-
-### Candidate approaches
-
-1. **Linear scorer**
-   - input: explicit evaluator metrics,
-   - output: total score.
-2. **Small MLP scorer**
-   - input: evaluator metrics + candidate metadata + native logits,
-   - output: reranking score.
-3. **Critical-actor scorer**
-   - input: features focused on closest / most interacting neighbors.
-
-### Training target options
-
-- pairwise ranking loss,
-- listwise ranking loss,
-- group-relative normalized advantage target.
-
-### New modules
-
-- `src/latentdriver_waymax_experiments/scorer/`
-- `scripts/train_lightweight_scorer.py`
-- `scripts/run_scorer_eval.py`
-
-### New notebook
-
-- `notebooks/latentdriver_scorer_train_colab.ipynb`
+The learned modulator should train on data collected under the same closed-loop contract used in evaluation.
 
 ### Exit criteria
 
-- scorer improves reranking over fixed weighted baselines on the dev slice,
-- backbone remains frozen,
-- training is Colab-feasible.
+- pilot outputs can be joined by `scenario_id`,
+- stepwise planner-action traces are available,
+- enough runtime state is exported to compute TTC and density proxies offline if needed.
+
+## Phase 3: Add the Runtime Modulation Hook
+
+### Goal
+
+Insert a planner-agnostic wrapper between the planner and Waymax environment step.
+
+### Minimal insertion point
+
+In:
+
+- `external/LatentDriver/simulator/engines/ltd_simulator.py`
+
+current flow is:
+
+```python
+action = self.model.get_predictions(...)
+control_action = action
+obs, obs_dict, rew, done, info = self.env.step(control_action, show_global=True)
+```
+
+The modulator should wrap `control_action` before `env.step(...)`.
+
+### New modules to add
+
+- `src/latentdriver_waymax_experiments/modulation/base.py`
+- `src/latentdriver_waymax_experiments/modulation/features.py`
+- `src/latentdriver_waymax_experiments/modulation/heuristic.py`
+- `src/latentdriver_waymax_experiments/modulation/runtime.py`
+- `src/latentdriver_waymax_experiments/modulation/config.py`
+
+### Core interface
+
+```text
+current_state, planner_action -> feature_encoder -> modulator -> modulated_action
+```
+
+### Exit criteria
+
+- modulation can be toggled from config,
+- default path remains unchanged when disabled,
+- both LatentDriver and PlanT can run through the same modulation wrapper.
+
+## Phase 4: Implement No-Training Heuristic Modulation
+
+### Goal
+
+Test whether a simple safety-aware action scaler already improves the tradeoff.
+
+### Baselines
+
+1. **Native planner**
+   - no intervention.
+2. **Constant scale**
+   - `s = 0.75`
+3. **Constant conservative scale**
+   - `s = 0.5`
+4. **TTC-only rule**
+   - scale down when approximate TTC drops below threshold.
+5. **TTC plus density heuristic**
+   - scale by a function of TTC, interaction density, and action magnitude.
+
+### Inputs
+
+- ego speed,
+- action magnitude,
+- nearest-neighbor distance,
+- approximate minimum TTC,
+- local interaction density.
+
+### Output
+
+Start with a scalar:
+
+```text
+s in [s_min, 1.0]
+```
+
+then:
+
+```text
+a' = s * a
+```
+
+### Why scalar first
+
+- planner-agnostic,
+- easy to interpret,
+- low engineering risk,
+- strong first baseline.
+
+### Exit criteria
+
+- heuristic modulator changes behavior on the pilot subset,
+- intervention statistics are logged,
+- results can be compared against progress-retention and `CS-SP`.
+
+## Phase 5: Add Short-Horizon Ghost-Rollout Label Generation
+
+### Goal
+
+Generate simulator-consistent supervision for a learned modulator.
+
+### Method
+
+For each observed state-action pair:
+
+1. construct a small scale set:
+
+```text
+S = {0.25, 0.5, 0.75, 1.0}
+```
+
+2. create scaled actions:
+
+```text
+a_s = s * a
+```
+
+3. run short ghost rollouts for horizon `H = 3..5` steps,
+4. score each candidate with explicit safety-progress terms,
+5. choose the best scale `s_star`.
+
+### New modules to add
+
+- `src/latentdriver_waymax_experiments/modulation/ghost_rollout.py`
+- `src/latentdriver_waymax_experiments/modulation/label_generation.py`
+- `scripts/generate_modulation_labels.py`
+
+### Output schema
+
+- `state_features`
+- `planner_action`
+- `scale_candidates`
+- `ghost_metrics_per_scale`
+- `best_scale`
+- `risk_targets`
+- `scenario_id`
+- `step_index`
+
+### Why this matters
+
+This creates supervision without retraining the planner or requiring human labels.
+
+### Exit criteria
+
+- a label dataset is generated from the 10-shard pilot,
+- label quality is inspectable and reproducible,
+- oracle scale selection is measurable.
+
+## Phase 6: Train a Lightweight Learned Modulator
+
+### Goal
+
+Learn a small model that predicts future interaction risk and maps it to action scaling.
+
+### Candidate approaches
+
+1. **Risk head plus analytic scaler**
+   - input: runtime features,
+   - output: risk score or short-horizon event probabilities,
+   - scale derived analytically from predicted risk.
+2. **Direct scale regressor**
+   - input: runtime features,
+   - output: `s_star`.
+3. **Multi-task head**
+   - collision-within-horizon,
+   - offroad-within-horizon,
+   - min-TTC prediction,
+   - scale target.
+
+### Recommended first model
+
+Start with:
+
+- tiny MLP,
+- risk head plus analytic scaler,
+- scalar action scale.
+
+### New modules to add
+
+- `src/latentdriver_waymax_experiments/modulation/model.py`
+- `src/latentdriver_waymax_experiments/modulation/train.py`
+- `scripts/train_action_modulator.py`
+- `scripts/run_modulated_eval.py`
+
+### Exit criteria
+
+- learned modulator beats constant-scale and TTC-only baselines on the pilot subset,
+- intervention remains lightweight,
+- planner backbone remains frozen.
+
+## Phase 7: Causal-Semantic Post-Rollout Analysis
+
+### Goal
+
+Test whether the modulator helps where the paper claim says it should help.
+
+### Main comparisons
+
+- native planner,
+- heuristic modulator,
+- learned modulator,
+- later optional planner-specific reranker.
+
+### Main metrics
+
+- collision rate,
+- offroad rate,
+- progress rate,
+- BaseScore,
+- Balanced `CS-SP`,
+- intervention rate,
+- mean action scale,
+- progress-retention ratio versus native planner.
+
+### Main buckets
+
+- `causal_high`
+- `causal_reasoning_overlap`
+- `reasoning_rule`
+- `reasoning_intention`
+- `dense_scene`
+- `intersection_or_turn`
+- `near_causal_agent`
+
+### Exit criteria
+
+- bucketed `CS-SP` tables exist,
+- the modulator has a clear safety-progress profile,
+- high-causal-pressure scenes are analyzed separately from easy scenes.
+
+## Phase 8: Optional Planner-Specific Branches
+
+### Goal
+
+Use planner-specific structure only after the planner-agnostic path is stable.
+
+### LatentDriver-specific options
+
+- candidate dump,
+- risk-aware reranking,
+- hybrid rerank plus modulate,
+- optional uncertainty-aware features from mode disagreement.
+
+### Why later
+
+This branch is valuable but narrower:
+
+- it does not transfer cleanly to PlanT as currently wired,
+- it is not needed to test the main post-hoc modulation hypothesis,
+- it should not block the cross-planner method story.
 
 ## Recommended Evaluation Ladder
 
-We should evaluate in this order:
+Evaluate in this order:
 
 1. `native`
-2. `best_of_k_oracle`
-3. `weighted_reranker`
-4. `group_relative_reranker`
-5. `lightweight_scorer`
+2. `constant_scale_0_75`
+3. `constant_scale_0_5`
+4. `ttc_only_modulator`
+5. `ttc_plus_density_modulator`
+6. `learned_modulator`
+7. `latentdriver_rerank`
+8. `latentdriver_rerank_plus_modulation`
 
-This order matters because it separates:
+This order separates:
 
-- whether better selection is possible at all,
-- whether hand-designed scores are enough,
-- whether learning actually adds value.
+- whether any scaling helps at all,
+- whether hand-designed risk rules are enough,
+- whether learning adds value,
+- whether planner-specific branches add anything beyond the general method.
 
 ## Colab Notebook Roadmap
 
@@ -387,104 +514,120 @@ This order matters because it separates:
 
 ### To add
 
-- `latentdriver_candidate_dump_colab.ipynb`
-- `latentdriver_rerank_colab.ipynb`
-- `latentdriver_consistency_colab.ipynb`
-- `latentdriver_scorer_train_colab.ipynb`
+- `latentdriver_modulation_heuristic_colab.ipynb`
+- `latentdriver_modulation_labels_colab.ipynb`
+- `latentdriver_modulation_train_colab.ipynb`
+- `latentdriver_modulation_analysis_colab.ipynb`
+- later optional:
+  - `latentdriver_candidate_dump_colab.ipynb`
+  - `latentdriver_rerank_colab.ipynb`
 
 ## Artifact Contract
 
-All new experiment outputs should remain Drive-backed and machine-readable.
+All new experiment outputs should remain machine-readable and Drive-backed.
 
-### Proposed additions to each run
+### Proposed additions per run
 
 - `metrics.json`
 - `run_manifest.json`
 - `config_snapshot.json`
-- `candidate_rollouts.npz`
-- `evaluator_breakdown.json`
-- `rerank_summary.json`
-- `consistency_summary.json`
+- `step_trace.jsonl` or compact equivalent
+- `modulation_summary.json`
+- `intervention_stats.json`
+- `ghost_rollout_labels.parquet` or `.jsonl`
+- `causal_semantic_summary.json`
 
 ## Validation Plan
 
 ### Unit tests
 
-- evaluator module math,
-- registry/config serialization,
-- candidate artifact schema validation,
-- reranking correctness on synthetic candidate sets.
+- feature extraction math,
+- TTC approximation behavior,
+- density feature calculation,
+- scale clipping and action shaping,
+- modulation config serialization,
+- label-generation objective selection.
 
 ### Integration tests
 
-- one smoke run produces candidate dump,
-- reranker reads dump and emits stable outputs,
-- Drive-backed artifact paths remain correct.
+- one smoke scene runs with modulation enabled,
+- default path remains unchanged when modulation is disabled,
+- heuristic modulator emits stable intervention stats,
+- learned modulator can load and run from saved weights.
 
 ### Edge cases
 
-- only one candidate available,
-- missing TTC / clearance information,
-- no nearby actors,
-- all candidates invalid,
-- native logits missing.
+- no nearby agents,
+- invalid neighbor trajectories,
+- action norm near zero,
+- high-density but non-closing traffic,
+- turn scenarios where scalar scaling may under-turn,
+- planner outputs containing NaNs or out-of-range values.
 
 ## Complexity and Scaling
 
 ### Cheap
 
-- evaluator module implementation,
-- no-training reranking,
-- consistency studies on smoke/dev slices.
+- heuristic modulation,
+- feature extraction,
+- per-step logging,
+- pilot analysis.
 
 ### Moderate
 
-- candidate dump patching,
-- full public-suite rerank evaluation.
+- ghost-rollout label generation,
+- learned modulator training on pilot outputs.
 
 ### Expensive
 
-- lightweight scorer training,
-- large K-sample studies,
+- full-suite label generation,
+- planner-specific reranking plus modulation hybrids,
 - any backbone fine-tuning.
 
 ## Failure Modes
 
-1. **No candidate access**
-   - reranking path blocked until upstream patch exists.
-2. **No useful candidate diversity**
-   - oracle best-of-K improvement is flat,
-   - learned scorer will not help.
-3. **Evaluator too brittle**
-   - hand-designed score improves proxies but hurts official metrics.
-4. **Selection-compute confound**
-   - gains come only from much larger K, not better scoring.
+1. **Over-conservatism**
+   - collision drops because the car barely moves.
+2. **Turn degradation**
+   - scalar scaling hurts route completion in curves and intersections.
+3. **Proxy mismatch**
+   - TTC-only features miss offroad or negotiated interaction failures.
+4. **Planner transfer gap**
+   - a learned modulator trained on LatentDriver traces does not transfer to PlanT.
+5. **Label mismatch**
+   - ghost-rollout objective does not correlate with final `CS-SP`.
 
 ## What Would Invalidate This Design
 
 This plan would need redesign if:
 
-- LatentDriver only exposes one deterministic final action with no recoverable candidate set,
-- or candidate-level diversity is so weak that best-of-K is flat,
-- or official metrics are inaccessible under the standardized contract.
+- runtime state access is too limited to estimate useful short-horizon risk,
+- scalar or anisotropic action scaling cannot improve safety without unacceptable progress collapse,
+- or short-horizon ghost-rollout labels do not correlate with downstream closed-loop outcomes.
 
 ## Immediate Next Steps
 
-1. Finish the current smoke preprocess + smoke eval path.
-2. Inspect upstream LatentDriver inference to determine candidate availability.
-3. Implement the evaluator registry/composer first.
-4. Add candidate dump support.
-5. Run a first best-of-K oracle study on a smoke slice before any learned scorer work.
+1. Add per-scenario and per-step pilot logging needed for modulation training.
+2. Implement the runtime modulation hook in `ltd_simulator.py`.
+3. Build the first heuristic TTC plus density modulator.
+4. Run native vs constant-scale vs heuristic modulation on the 10-shard pilot.
+5. Add ghost-rollout label generation for scaled actions.
+6. Train the first lightweight learned risk-aware modulator.
+7. Attach the causal-semantic overlay after rollout and compute bucketed `CS-SP`.
 
 ## Practical Recommendation
 
-Do **not** start with scorer training.
+Do **not** start with fine-tuning the pretrained planners.
+
+Do **not** make LatentDriver-specific reranking the first method branch.
 
 Start with:
 
-- evaluator library,
-- candidate dump,
-- no-training reranking,
-- consistency plots.
+- evaluator and pilot artifact export,
+- runtime action modulation hook,
+- heuristic risk-aware modulation,
+- ghost-rollout label generation,
+- lightweight learned modulator,
+- causal-semantic bucket analysis.
 
-That is the fastest route to visible results and the cleanest route to a paper-worthy empirical story.
+This is the strongest route to a planner-agnostic, closed-loop, method-plus-evaluation story.
