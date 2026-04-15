@@ -10,7 +10,7 @@ The goal is not only to reproduce LatentDriver-style aggregate metrics, but to a
 
 This supports a combined contribution:
 
-1. A planner method improvement, such as risk-aware candidate selection.
+1. A planner method improvement, such as risk-aware action modulation.
 2. A diagnostic evaluation methodology for closed-loop planners.
 
 ## 2. Research Positioning
@@ -322,33 +322,37 @@ The evaluation should guide the planner method.
 A natural first method is:
 
 ```text
-Risk-Aware Latent Candidate Selection
+Risk-Aware Action Modulation
 ```
 
-If LatentDriver produces multiple latent decisions or candidate futures, choose the final plan using a score like:
+Keep the planner frozen and scale its waypoint action before `env.step(...)` using short-horizon risk proxies:
 
 ```text
-CandidateScore(k) =
-  alpha * progress(k)
-  - beta * collision_risk(k)
-  - gamma * offroad_risk(k)
-  - delta * causal_agent_proximity_risk(k)
-  - eta * uncertainty(k)
+ModulatedAction = scale(current_state, planner_action) * planner_action
 ```
 
-This is modular because it can be implemented as a selection layer after candidate generation.
+where the scale can depend on:
+
+```text
+alpha * TTC risk
++ beta * overlap risk
++ gamma * interaction density
++ delta * action magnitude under contextual risk
+```
+
+This is modular because it sits between planner output and simulation dynamics. It is more portable than a planner-specific candidate selector.
 
 Pipeline:
 
 ```text
-Planner candidate trajectories
--> Risk-aware selector
--> Selected trajectory
+Frozen planner action
+-> Risk-aware modulator
+-> Modulated action
 -> Closed-loop simulation
 -> CS-SP evaluation
 ```
 
-This method can potentially transfer to LatentDriver-like and PLANT-like planners if candidate plans or cost terms are accessible.
+This method can potentially transfer to LatentDriver-like and PLANT-like planners because both already expose the same waypoint-delta action space in this repo.
 
 ## 14. Hypotheses
 
@@ -364,7 +368,7 @@ LatentDriver improves over IDM on average, but may fail disproportionately under
 
 ### H3
 
-Risk-aware candidate selection improves safety-progress tradeoff in high-causal-pressure scenarios.
+Risk-aware action modulation improves safety-progress tradeoff in high-causal-pressure scenarios.
 
 ### H4
 
@@ -414,7 +418,7 @@ Outputs:
 
 Goal:
 
-Implement a minimal risk-aware selection layer.
+Implement a minimal risk-aware action modulation layer.
 
 Compare:
 
@@ -473,7 +477,7 @@ The GPU request should be framed around scientific necessity, not convenience.
 Suggested statement:
 
 ```text
-I am building a diagnostic closed-loop planner evaluation protocol using WOMD interaction and causal labels. The experiment requires paired simulation rollouts for IDM, LatentDriver, and a proposed risk-aware planner over fixed interaction-heavy validation subsets. Colab is unreliable for this because each comparison requires persistent GPU runtime, local storage, and resumable simulation across many shards. University GPU access is needed to complete the paired causal-semantic safety-progress evaluation reproducibly.
+I am building a diagnostic closed-loop planner evaluation protocol using WOMD interaction and causal labels. The experiment requires paired simulation rollouts for IDM, LatentDriver, and a proposed risk-aware action modulation layer over fixed interaction-heavy validation subsets. Colab is unreliable for this because each comparison requires persistent GPU runtime, local storage, and resumable simulation across many shards. University GPU access is needed to complete the paired causal-semantic safety-progress evaluation reproducibly.
 ```
 
 ## 19. Immediate Next Tasks
@@ -485,7 +489,7 @@ I am building a diagnostic closed-loop planner evaluation protocol using WOMD in
 5. Implement BaseScore and Balanced CS-SP.
 6. Run IDM vs LatentDriver on the fixed 10-shard interaction subset.
 7. Use the result to select the first method intervention.
-8. Implement a minimal risk-aware candidate selector.
+8. Implement a minimal risk-aware action modulator.
 9. Run LatentDriver vs YourMethod on the same subset.
 10. Produce aggregate and bucketed tables.
 
@@ -767,8 +771,8 @@ Required per-scenario output:
 | `min_distance_to_agent` | preferred |
 | `comfort_acceleration` | optional |
 | `comfort_jerk` | optional |
-| `selected_candidate_id` | required for candidate selector studies |
-| `candidate_scores` | required for selector ablations |
+| `selected_candidate_id` | optional, only for later reranking studies |
+| `candidate_scores` | optional, only for selector ablations |
 | `failure_reason` | derived |
 
 Aggregate-only metrics are insufficient for this research direction.
@@ -958,7 +962,7 @@ Do not spend full-validation compute before the pilot shows a meaningful signal.
 A strong final contribution could be stated as:
 
 ```text
-We propose a causal-semantic closed-loop evaluation protocol for autonomous driving planners by joining WOMD-Reasoning interaction semantics with CausalAgents human causal labels. Using this protocol, we show that aggregate planner metrics hide systematic failures under high causal interaction pressure. We then introduce a risk-aware candidate selection method for latent multi-hypothesis planners and demonstrate improved safety-progress tradeoff over LatentDriver in interaction-heavy validation scenarios.
+We propose a causal-semantic closed-loop evaluation protocol for autonomous driving planners by joining WOMD-Reasoning interaction semantics with CausalAgents human causal labels. Using this protocol, we show that aggregate planner metrics hide systematic failures under high causal interaction pressure. We then introduce a lightweight post-hoc risk-aware action modulation method for frozen planners and demonstrate improved safety-progress tradeoff over LatentDriver in interaction-heavy validation scenarios.
 ```
 
 This statement has two parts:

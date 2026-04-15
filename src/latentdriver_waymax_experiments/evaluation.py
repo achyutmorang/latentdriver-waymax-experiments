@@ -14,8 +14,10 @@ from typing import Any, Dict, Iterable, List
 
 from .artifacts import create_named_run_bundle, create_run_bundle, write_json
 from .config import load_config, resolve_repo_relative
+from .modulation.config import collect_modulation_environment
 from .preprocess_archive import default_archive_path, default_shard_archive_dir, extract_archive, extract_shard_archives
 from .upstream import (
+    ensure_action_modulation_source_patch,
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
@@ -656,7 +658,9 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
     jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+    action_modulation_compat = ensure_action_modulation_source_patch(upstream_dir)
     matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
+    modulation_environment = collect_modulation_environment()
     resolved_seed = int(load_config()["evaluation"]["tiers"][tier].get("seed", 0) if seed is None else seed)
     bundle = create_run_bundle(tier=f"{tier}_{model}_seed{resolved_seed}")
     cmd = build_eval_command(model=model, tier=tier, seed=resolved_seed, vis=vis, metrics_path=bundle["metrics_path"], vis_output_dir=bundle["vis_dir"])
@@ -672,7 +676,9 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
         "lightning_compat": lightning_compat,
         "crdp_compat": crdp_compat,
         "jax_tree_map_compat": jax_tree_map_compat,
+        "action_modulation_compat": action_modulation_compat,
         "matplotlib_canvas_compat": matplotlib_canvas_compat,
+        "modulation_environment": modulation_environment,
     }
     write_json(bundle["config_snapshot"], snapshot)
     if dry_run:
@@ -738,6 +744,7 @@ def run_eval(*, model: str, tier: str, seed: int | None = None, vis: str | bool 
         "checkpoint_path": str(checkpoint_path(model)),
         "upstream_dir": str(upstream_dir),
         "command": cmd,
+        "modulation_environment": modulation_environment,
         "metrics_path": str(bundle["metrics_path"]),
         "stdout_path": str(bundle["stdout_path"]),
         "stderr_path": str(bundle["stderr_path"]),
@@ -768,7 +775,9 @@ def run_eval_resumable(
     lightning_compat = ensure_lightning_compat_source_patches(upstream_dir)
     crdp_compat = ensure_crdp_compat_source_patch(upstream_dir)
     jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
+    action_modulation_compat = ensure_action_modulation_source_patch(upstream_dir)
     matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
+    modulation_environment = collect_modulation_environment()
     tier_cfg = load_config()["evaluation"]["tiers"][tier]
     resolved_seed = int(tier_cfg.get("seed", 0) if seed is None else seed)
     bundle = create_named_run_bundle(run_id=_resumable_run_id(tier=tier, model=model, seed=resolved_seed))
@@ -792,7 +801,9 @@ def run_eval_resumable(
         "lightning_compat": lightning_compat,
         "crdp_compat": crdp_compat,
         "jax_tree_map_compat": jax_tree_map_compat,
+        "action_modulation_compat": action_modulation_compat,
         "matplotlib_canvas_compat": matplotlib_canvas_compat,
+        "modulation_environment": modulation_environment,
         "resume": resume,
         "max_shards": max_shards,
     }
@@ -802,8 +813,9 @@ def run_eval_resumable(
             "run_id": bundle["run_id"],
             "run_dir": str(bundle["run_dir"]),
             "seed": resolved_seed,
-            "command": cmd,
-            "missing_inputs": missing,
+        "command": cmd,
+        "modulation_environment": modulation_environment,
+        "missing_inputs": missing,
             "ready": not bool(missing),
             "resume": resume,
             "max_shards": max_shards,
@@ -993,6 +1005,7 @@ def run_eval_resumable(
         "checkpoint_path": str(checkpoint_path(model)),
         "upstream_dir": str(upstream_dir),
         "command": cmd,
+        "modulation_environment": modulation_environment,
         "metrics_path": str(bundle["metrics_path"]),
         "stdout_path": str(bundle["stdout_path"]),
         "stderr_path": str(bundle["stderr_path"]),

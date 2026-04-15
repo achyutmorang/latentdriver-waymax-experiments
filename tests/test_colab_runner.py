@@ -31,6 +31,7 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("bootstrap-session", profiles)
         self.assertIn("probe-candidate-diversity", profiles)
         self.assertIn("probe-candidate-diversity-single", profiles)
+        self.assertIn("smoke-eval-reactive-modulation-heuristic-single", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
         self.assertIn("create-full-preprocess-archive", profiles)
         self.assertIn("create-full-preprocess-shard-archives", profiles)
@@ -92,6 +93,17 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("--model latentdriver_t2_j3", " ".join(suite_steps[-1].command))
         self.assertIn("--model plant", " ".join(suite_steps[-1].command))
         self.assertIn("scripts/probe_candidate_diversity.py --model plant", " ".join(single_steps[-1].command))
+
+    def test_smoke_modulation_profile_bootstraps_upstream_and_uses_heuristic_flags(self) -> None:
+        steps = profile_steps("smoke-eval-reactive-modulation-heuristic-single", model="latentdriver_t2_j3")
+        self.assertEqual(
+            [step.name for step in steps],
+            ["bootstrap_upstream", "smoke_eval_reactive_modulation_heuristic_latentdriver_t2_j3"],
+        )
+        command = " ".join(steps[-1].command)
+        self.assertIn("--tier smoke_reactive", command)
+        self.assertIn("--modulation heuristic", command)
+        self.assertIn("--modulation-trace results/modulation_traces/latentdriver_t2_j3_smoke_reactive.jsonl", command)
 
     def test_preprocess_archive_profiles_use_archive_cli(self) -> None:
         create_steps = profile_steps("create-full-preprocess-archive")

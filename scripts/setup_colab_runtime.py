@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from latentdriver_waymax_experiments.upstream import (
+    ensure_action_modulation_source_patch,
     ensure_crdp_compat_source_patch,
     ensure_jax_tree_map_compat_source_patch,
     ensure_lightning_compat_source_patches,
@@ -239,6 +240,8 @@ def main() -> int:
     print(f"[latentdriver-setup] preprocess multiprocessing compat patch: {preprocess_multiprocessing_compat}")
     jax_tree_map_compat = ensure_jax_tree_map_compat_source_patch(upstream_dir)
     print(f"[latentdriver-setup] jax tree_map compat patch: {jax_tree_map_compat}")
+    action_modulation_compat = ensure_action_modulation_source_patch(upstream_dir)
+    print(f"[latentdriver-setup] action modulation compat patch: {action_modulation_compat}")
     matplotlib_canvas_compat = ensure_matplotlib_canvas_compat_source_patch(upstream_dir)
     print(f"[latentdriver-setup] matplotlib canvas compat patch: {matplotlib_canvas_compat}")
 

@@ -328,6 +328,76 @@ JAX_TREE_MAP_COMPAT_FILES = (
     Path("waymax") / "visualization" / "viz.py",
 )
 
+MODULATION_IMPORT_OLD_BLOCK = """from simulator.engines.base_simulator import BaseSimulator
+import time
+import numpy as np
+import torch
+"""
+
+MODULATION_IMPORT_NEW_BLOCK = """from simulator.engines.base_simulator import BaseSimulator
+import time
+import numpy as np
+import torch
+
+try:
+    from latentdriver_waymax_experiments.modulation.runtime import build_action_modulation_runtime_from_env
+except Exception:
+    build_action_modulation_runtime_from_env = None
+"""
+
+MODULATION_INIT_OLD_BLOCK = """    def __init__(self, model, config, batch_dims):
+        super().__init__(model, config, batch_dims)
+        self.cfg = config
+"""
+
+MODULATION_INIT_NEW_BLOCK = """    def __init__(self, model, config, batch_dims):
+        super().__init__(model, config, batch_dims)
+        self.cfg = config
+        self.action_modulation_runtime = None
+        if build_action_modulation_runtime_from_env is not None:
+            self.action_modulation_runtime = build_action_modulation_runtime_from_env(batch_dims)
+            if self.action_modulation_runtime is not None:
+                print(self.action_modulation_runtime.format_summary(prefix='[action-modulation:init]'))
+"""
+
+MODULATION_ACTION_OLD_BLOCK = """                    if isinstance(action,torch.Tensor):
+                        action = action.detach().cpu().numpy()
+                    control_action = action
+
+                    obs, obs_dict,rew, done, info = self.env.step(control_action,show_global=True)
+"""
+
+MODULATION_ACTION_NEW_BLOCK = """                    if isinstance(action,torch.Tensor):
+                        action = action.detach().cpu().numpy()
+                    control_action = action
+                    if self.action_modulation_runtime is not None:
+                        control_action = self.action_modulation_runtime.apply(
+                            action=action,
+                            current_state=self.env.states[-1],
+                            batch_index=self.idx,
+                            step_index=self.T,
+                        )
+
+                    obs, obs_dict,rew, done, info = self.env.step(control_action,show_global=True)
+"""
+
+MODULATION_ACTION_HISTORY_OLD_BLOCK = "                    actions = np.concatenate([actions,action[:,np.newaxis,...]],axis=1)\n"
+MODULATION_ACTION_HISTORY_NEW_BLOCK = "                    actions = np.concatenate([actions,control_action[:,np.newaxis,...]],axis=1)\n"
+
+MODULATION_SUMMARY_OLD_BLOCK = """                self.idx += 1
+                print('Processed: ', self.idx, 'th batch, Time: ', time.time()-a, 's')
+                
+                self.render(vis, self.cfg.method.model_name, vis_output_dir=vis_output_dir)
+"""
+
+MODULATION_SUMMARY_NEW_BLOCK = """                self.idx += 1
+                print('Processed: ', self.idx, 'th batch, Time: ', time.time()-a, 's')
+                if self.action_modulation_runtime is not None:
+                    print(self.action_modulation_runtime.format_summary())
+                
+                self.render(vis, self.cfg.method.model_name, vis_output_dir=vis_output_dir)
+"""
+
 
 def upstream_paths() -> Dict[str, Path]:
     cfg = load_config()
@@ -504,3 +574,42 @@ def ensure_jax_tree_map_compat_source_patch(upstream_dir: Path) -> Dict[str, str
         path.write_text(source.replace("jax.tree_map(", "jax.tree_util.tree_map("), encoding="utf-8")
         statuses[key] = "patched"
     return statuses
+
+
+def ensure_action_modulation_source_patch(upstream_dir: Path) -> Dict[str, str]:
+    simulator_path = upstream_dir / "simulator" / "engines" / "ltd_simulator.py"
+    if not simulator_path.exists():
+        return {
+            "imports": "missing",
+            "init": "missing",
+            "action_hook": "missing",
+            "action_history": "missing",
+            "summary": "missing",
+        }
+    return {
+        "imports": _replace_source_block(
+            simulator_path,
+            MODULATION_IMPORT_OLD_BLOCK,
+            MODULATION_IMPORT_NEW_BLOCK,
+        ),
+        "init": _replace_source_block(
+            simulator_path,
+            MODULATION_INIT_OLD_BLOCK,
+            MODULATION_INIT_NEW_BLOCK,
+        ),
+        "action_hook": _replace_source_block(
+            simulator_path,
+            MODULATION_ACTION_OLD_BLOCK,
+            MODULATION_ACTION_NEW_BLOCK,
+        ),
+        "action_history": _replace_source_block(
+            simulator_path,
+            MODULATION_ACTION_HISTORY_OLD_BLOCK,
+            MODULATION_ACTION_HISTORY_NEW_BLOCK,
+        ),
+        "summary": _replace_source_block(
+            simulator_path,
+            MODULATION_SUMMARY_OLD_BLOCK,
+            MODULATION_SUMMARY_NEW_BLOCK,
+        ),
+    }

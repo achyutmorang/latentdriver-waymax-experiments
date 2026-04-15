@@ -67,8 +67,8 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 - [ ] Join completed 10-shard rollout outputs with WOMD-Reasoning and CausalAgents for post-rollout diagnostic insight.
 - [ ] Implement bucket assignment for causal-semantic diagnostics.
 - [ ] Implement `CS-SP` base score and balanced bucket aggregation.
-- [ ] Add a planner-agnostic runtime modulation hook between planner action output and `Waymax` environment step.
-- [ ] Implement heuristic risk-aware action modulation using TTC, interaction density, and action magnitude proxies.
+- [x] Add a planner-agnostic runtime modulation hook between planner action output and `Waymax` environment step.
+- [x] Implement heuristic risk-aware action modulation using TTC, interaction density, and action magnitude proxies.
 - [ ] Generate short-horizon ghost-rollout labels for scaled-action risk supervision.
 - [ ] Train a lightweight learned risk-aware action modulator on frozen-planner rollout data.
 - [ ] Run native planner vs heuristic modulator vs learned modulator on the same paired subset.
@@ -91,6 +91,7 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `full_eval_dry_run` | Full validation config only | Reactive by default | One selected checkpoint | Verify all paths, markers, checkpoint bindings, GCS auth, and command construction before expensive simulation. | Done |
 | `validation_interactive_pilot` | Fixed 10 interaction shards | Reactive IDM agents | IDM + LatentDriver | Run the planners on plain WOMD `validation_interactive`; keep the model input contract unchanged. | Next |
 | `metadata_join_check` | WOMD-Reasoning + CausalAgents over completed pilot outputs | Not applicable | Not applicable | Verify scenario and agent ID compatibility, then attach the causal-semantic overlay after rollout. | Next |
+| `smoke_reactive_modulation_heuristic_single` | One-shard validation subset | Reactive IDM agents | One selected frozen planner | Verify the planner-agnostic runtime modulation hook, heuristic scaling, and JSONL trace export on a cheap closed-loop run. | Ready |
 | `risk_aware_modulation_heuristic` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Test a no-training TTC plus density based action scaler on frozen planners. | Planned |
 | `risk_aware_modulation_labels` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Generate short-horizon ghost-rollout supervision for scaled-action risk prediction. | Planned |
 | `risk_aware_modulation_learned` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Test a lightweight learned action modulator on `CS-SP`. | Planned |
@@ -157,6 +158,35 @@ frozen planner + native action
 -> planner-specific reranking or hybrid selector plus modulator if needed
 -> full fine-tuning only if earlier stages show signal
 ```
+
+## Modulation Quick Start
+
+Run one smoke evaluation with heuristic action modulation from the repo root:
+
+```bash
+python3 scripts/run_waymax_eval.py \
+  --model latentdriver_t2_j3 \
+  --tier smoke_reactive \
+  --modulation heuristic \
+  --modulation-trace results/modulation_traces/latentdriver_t2_j3_smoke_reactive.jsonl
+```
+
+From the Colab runner:
+
+```bash
+python3 scripts/colab_canary.py \
+  --profile smoke-eval-reactive-modulation-heuristic-single \
+  --model latentdriver_t2_j3 \
+  --auto-install-runtime
+```
+
+Key environment knobs:
+
+- `LATENTDRIVER_ACTION_MODULATION=heuristic`
+- `LATENTDRIVER_ACTION_MODULATION_MIN_SCALE=0.35`
+- `LATENTDRIVER_ACTION_MODULATION_TTC_THRESHOLD_SECONDS=3.0`
+- `LATENTDRIVER_ACTION_MODULATION_DISTANCE_THRESHOLD_METERS=8.0`
+- `LATENTDRIVER_ACTION_MODULATION_TRACE_PATH=.../trace.jsonl`
 
 ## Patch Boundary
 

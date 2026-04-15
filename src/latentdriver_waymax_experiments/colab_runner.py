@@ -28,6 +28,7 @@ NO_RUNTIME_SETUP_PROFILES = {
     "download-checkpoints",
     "probe-candidate-diversity",
     "probe-candidate-diversity-single",
+    "smoke-eval-reactive-modulation-heuristic-single",
     "stage-full-womd-validation",
     "create-full-preprocess-archive",
     "create-full-preprocess-shard-archives",
@@ -46,6 +47,7 @@ UPSTREAM_REQUIRED_PROFILES = {
     "install-runtime",
     "probe-candidate-diversity",
     "probe-candidate-diversity-single",
+    "smoke-eval-reactive-modulation-heuristic-single",
     "smoke-preprocess",
     "smoke-eval-reactive",
     "smoke-eval-non-reactive",
@@ -83,6 +85,7 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "download-checkpoints": "Download or verify public evaluation checkpoints into the Drive-bound checkpoint cache.",
     "probe-candidate-diversity": "Inspect whether LatentDriver and PLANT expose rerankable candidate sets in the current repo wiring.",
     "probe-candidate-diversity-single": "Inspect whether one configured model exposes rerankable candidate diversity in the current repo wiring.",
+    "smoke-eval-reactive-modulation-heuristic-single": "Run one smoke_reactive evaluation with heuristic action modulation enabled and trace logging.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
     "create-full-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the full preprocessing cache.",
     "create-full-preprocess-shard-archives": "Create resumable Drive-backed shard tar archives of the full preprocessing cache.",
@@ -238,6 +241,25 @@ def profile_steps(
                 name=f"probe_candidate_diversity_{model}",
                 command=_script_command("scripts/probe_candidate_diversity.py", "--model", model),
                 description=f"Inspect exposed candidate diversity for {model}.",
+            ),
+        ]
+    if profile == "smoke-eval-reactive-modulation-heuristic-single":
+        return [
+            *steps,
+            RunnerStep(
+                name=f"smoke_eval_reactive_modulation_heuristic_{model}",
+                command=_script_command(
+                    "scripts/run_waymax_eval.py",
+                    "--model",
+                    model,
+                    "--tier",
+                    "smoke_reactive",
+                    "--modulation",
+                    "heuristic",
+                    "--modulation-trace",
+                    f"results/modulation_traces/{model}_smoke_reactive.jsonl",
+                ),
+                description=f"Run smoke_reactive for {model} with heuristic action modulation and JSONL trace logging.",
             ),
         ]
     if profile == "stage-full-womd-validation":
