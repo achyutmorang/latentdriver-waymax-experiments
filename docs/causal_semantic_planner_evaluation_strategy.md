@@ -92,6 +92,7 @@ The proposed diagnostic layer combines:
 4. Planner rollout outputs.
 
 This should be implemented as a metadata join table over WOMD scenario IDs, not as a duplicated raw dataset.
+In the current rapid-prototyping phase, this metadata is attached only after simulation or evaluation has finished. The planners still consume plain WOMD `validation_interactive` inputs plus the existing preprocess artifacts.
 
 ### 5.1 Join Keys
 
@@ -371,44 +372,43 @@ The proposed method does not improve uniformly; bucketed evaluation reveals wher
 
 ## 15. Experimental Stages
 
-### Stage 1: Metadata Join Feasibility
+### Stage 1: Plain WOMD Pilot Evaluation
 
 Goal:
 
-Verify that WOMD-Reasoning and CausalAgents can be joined for `validation_interactive`.
-
-Checks:
-
-```text
-intersection_rate = count(joined scenario IDs) / count(WOMD-Reasoning validation_interactive IDs)
-agent_overlap_rate = count(rel_id intersect causal_agent_ids) / count(joined scenarios)
-```
-
-Expected output:
-
-- `joined_metadata.parquet` or `joined_metadata.jsonl`
-- Scenario-level overlap stats
-- Agent-level overlap stats
-
-### Stage 2: Pilot Evaluation
-
-Goal:
-
-Run IDM and LatentDriver on a fixed 10-shard `validation_interactive` subset.
+Run IDM and LatentDriver on a fixed 10-shard plain WOMD `validation_interactive` subset.
 
 Example fixed shard set:
 
 ```text
-0, 30, 60, 90, 120
+0, 15, 30, 45, 60, 75, 90, 105, 120, 135
+```
+
+Expected output:
+
+- Per-scenario rollout metrics
+- Run manifests keyed by `scenario_id`
+- No WOMD-Reasoning or CausalAgents labels inside the planner input path
+
+### Stage 2: Post-Rollout Metadata Join Feasibility
+
+Goal:
+
+Verify that WOMD-Reasoning and CausalAgents can be joined onto the completed pilot outputs.
+
+Checks:
+
+```text
+intersection_rate = count(joined scenario IDs) / count(pilot rollout scenario IDs)
+agent_overlap_rate = count(rel_id intersect causal_agent_ids) / count(joined scenarios)
 ```
 
 Outputs:
 
-- Per-scenario rollout metrics
-- BaseScore
-- Bucket labels
-- Aggregate table
-- Bucketed table
+- `joined_metadata.parquet` or `joined_metadata.jsonl`
+- Scenario-level overlap stats
+- Agent-level overlap stats
+- Coverage report for `full_metadata`, `reasoning_only`, and `causal_only`
 
 ### Stage 3: Method Prototype
 
@@ -877,6 +877,8 @@ The planner does not see WOMD-Reasoning or CausalAgents labels.
 
 Use labels only for analysis.
 
+This is the default setting for the current fixed 10-shard `validation_interactive` rapid-prototyping benchmark.
+
 This is more deployment-realistic.
 
 ### Privileged-method metadata
@@ -943,9 +945,9 @@ Use compute in stages.
 | Stage | Planners | Data | Purpose |
 | --- | --- | --- | --- |
 | `S0` | IDM only | 1 shard | Pipeline sanity |
-| `S1` | IDM + LatentDriver | 10 shards | Baseline rapid-prototyping comparison |
-| `S2` | LatentDriver + oracle method | 10 shards | Test the method idea on the same fixed subset |
-| `S3` | LatentDriver + proxy method | 10 shards | Main rapid-prototyping evidence |
+| `S1` | IDM + LatentDriver | 10 shards | Plain WOMD rapid-prototyping comparison |
+| `S2` | Metadata join overlay | same 10 shards | Attach WOMD-Reasoning and CausalAgents after rollout for diagnostic insight |
+| `S3` | LatentDriver + proxy method | 10 shards | Main rapid-prototyping evidence once overlay diagnostics suggest a method |
 | `S4` | IDM + LatentDriver + proxy method | 20 shards | GPU request / thesis committee evidence |
 | `S5` | Full suite | full split | Final result |
 
