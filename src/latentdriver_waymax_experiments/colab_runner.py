@@ -324,9 +324,13 @@ def profile_steps(
                     _interactive_pilot_selected_shards_arg(),
                     "--target-uri",
                     _interactive_pilot_target_uri(),
+                    "--force",
+                    "--verify-required-feature",
+                    "roadgraph_samples/xyz",
                 ),
                 description=(
-                    "Stage the fixed 10-shard interactive pilot subset from v1.1.0 regular validation into a dense local tfexample dataset. "
+                    "Stage the fixed 10-shard pilot subset from v1.1.0 regular validation into a dense local tfexample dataset. "
+                    "The command overwrites stale staged shards and verifies the required WOMD tf.Example schema. "
                     "Interactive scenario filtering is applied post-rollout, not at the TFRecord level."
                 ),
             ),

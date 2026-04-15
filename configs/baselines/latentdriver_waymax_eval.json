@@ -65,7 +65,7 @@
       "preprocess_batch_dims": [1, 64]
     },
     "interactive_pilot": {
-      "dataset_pattern": "validation_interactive_pilot/validation_interactive_tfexample.tfrecord@10",
+      "dataset_pattern": "validation_pilot/validation_tfexample.tfrecord@10",
       "preprocess_batch_dims": [1, 64],
       "selected_shards": [0, 15, 30, 45, 60, 75, 90, 105, 120, 135],
       "default_source_uri": "gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150",

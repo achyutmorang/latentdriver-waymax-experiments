@@ -96,9 +96,11 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertEqual([step.name for step in steps], ["stage_interactive_pilot_shards"])
         command = " ".join(steps[0].command)
         self.assertIn("scripts/stage_womd_subset_shards.py", command)
-        self.assertIn("--source-uri-env LATENTDRIVER_INTERACTIVE_PILOT_SOURCE_URI", command)
+        self.assertIn("--source-uri gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150", command)
         self.assertIn("--target-uri", command)
-        self.assertIn("validation_interactive_pilot/validation_interactive_tfexample.tfrecord@10", command)
+        self.assertIn("validation_pilot/validation_tfexample.tfrecord@10", command)
+        self.assertIn("--force", command)
+        self.assertIn("--verify-required-feature roadgraph_samples/xyz", command)
 
     def test_candidate_diversity_profiles_bootstrap_upstream_but_skip_runtime_setup(self) -> None:
         suite_steps = profile_steps("probe-candidate-diversity")
