@@ -57,6 +57,11 @@ def _preprocess_destination_inputs(mode: str) -> dict[str, Path]:
             "preprocess_path": preprocessed_root / "smoke" / "val_preprocessed_path",
             "intention_path": preprocessed_root / "smoke" / "val_intention_label",
         }
+    if mode == "interactive_pilot":
+        return {
+            "preprocess_path": preprocessed_root / "interactive_pilot" / "val_preprocessed_path",
+            "intention_path": preprocessed_root / "interactive_pilot" / "val_intention_label",
+        }
     raise ValueError(f"Unsupported mode={mode!r}")
 
 
@@ -268,8 +273,8 @@ def _repair_payload(mode: str, *, dry_run: bool) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run validation-only preprocessing for smoke or full validation.")
-    parser.add_argument("--mode", choices=["smoke", "full"], default="smoke")
+    parser = argparse.ArgumentParser(description="Run validation-only preprocessing for smoke, full, or pilot validation datasets.")
+    parser.add_argument("--mode", choices=["smoke", "full", "interactive_pilot"], default="smoke")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="Delete existing generated preprocess outputs and rebuild them.")
     parser.add_argument(

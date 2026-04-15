@@ -49,6 +49,32 @@ class PreprocessArchiveTests(unittest.TestCase):
             self.assertEqual((target / "full" / "val_intention_label" / "1.txt").read_text(encoding="utf-8"), "intention-1")
             self.assertEqual(extracted["target_root"], str(target))
 
+    def test_create_and_extract_interactive_pilot_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            preprocessed = root / "preprocessed"
+            self._write_preprocess_triple(preprocessed, "interactive_pilot", "pilot-1")
+            archive = root / "interactive_pilot_preprocess_cache.tar"
+            target = root / "local"
+
+            with patch("latentdriver_waymax_experiments.preprocess_archive.preprocessed_root", return_value=preprocessed):
+                created = create_archive(mode="interactive_pilot", archive_path=archive)
+                status = archive_status(mode="interactive_pilot", archive_path=archive, target_root=target)
+                extracted = extract_archive(mode="interactive_pilot", archive_path=archive, target_root=target)
+
+            self.assertTrue(archive.is_file())
+            self.assertGreater(created["archive_size_bytes"], 0)
+            self.assertTrue(status["archive_exists"])
+            self.assertEqual(
+                (target / "interactive_pilot" / "val_preprocessed_path" / "map" / "pilot-1.npy").read_bytes(),
+                b"map-pilot-1",
+            )
+            self.assertEqual(
+                (target / "interactive_pilot" / "val_intention_label" / "pilot-1.txt").read_text(encoding="utf-8"),
+                "intention-pilot-1",
+            )
+            self.assertEqual(extracted["target_root"], str(target))
+
     def test_create_and_extract_shard_archives_skips_completed_parts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

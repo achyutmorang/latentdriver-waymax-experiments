@@ -33,6 +33,12 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("probe-candidate-diversity-single", profiles)
         self.assertIn("smoke-eval-reactive-modulation-heuristic-single", profiles)
         self.assertIn("stage-full-womd-validation", profiles)
+        self.assertIn("stage-interactive-pilot-shards", profiles)
+        self.assertIn("interactive-pilot-preprocess-status", profiles)
+        self.assertIn("interactive-pilot-preprocess", profiles)
+        self.assertIn("interactive-pilot-preprocess-archive-status", profiles)
+        self.assertIn("create-interactive-pilot-preprocess-archive", profiles)
+        self.assertIn("restore-interactive-pilot-preprocess-archive", profiles)
         self.assertIn("create-full-preprocess-archive", profiles)
         self.assertIn("create-full-preprocess-shard-archives", profiles)
         self.assertIn("restore-full-preprocess-archive", profiles)
@@ -85,6 +91,15 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("scripts/stage_womd_validation_shards.py", command)
         self.assertIn("--staging-root artifacts/assets/raw_womd", command)
 
+    def test_stage_interactive_pilot_profile_uses_subset_stager_and_env_source(self) -> None:
+        steps = profile_steps("stage-interactive-pilot-shards")
+        self.assertEqual([step.name for step in steps], ["stage_interactive_pilot_shards"])
+        command = " ".join(steps[0].command)
+        self.assertIn("scripts/stage_womd_subset_shards.py", command)
+        self.assertIn("--source-uri-env LATENTDRIVER_INTERACTIVE_PILOT_SOURCE_URI", command)
+        self.assertIn("--target-uri", command)
+        self.assertIn("validation_interactive_pilot/validation_interactive_tfexample.tfrecord@10", command)
+
     def test_candidate_diversity_profiles_bootstrap_upstream_but_skip_runtime_setup(self) -> None:
         suite_steps = profile_steps("probe-candidate-diversity")
         single_steps = profile_steps("probe-candidate-diversity-single", model="plant")
@@ -106,11 +121,26 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertIn("--modulation-trace results/modulation_traces/latentdriver_t2_j3_smoke_reactive.jsonl", command)
 
     def test_preprocess_archive_profiles_use_archive_cli(self) -> None:
+        pilot_status_steps = profile_steps("interactive-pilot-preprocess-archive-status")
+        pilot_create_steps = profile_steps("create-interactive-pilot-preprocess-archive")
+        pilot_restore_steps = profile_steps("restore-interactive-pilot-preprocess-archive")
         create_steps = profile_steps("create-full-preprocess-archive")
         create_shards_steps = profile_steps("create-full-preprocess-shard-archives")
         restore_steps = profile_steps("restore-full-preprocess-archive")
         restore_shards_steps = profile_steps("restore-full-preprocess-shard-archives")
         status_steps = profile_steps("full-preprocess-archive-status")
+        self.assertIn(
+            "scripts/preprocess_cache_archive.py status --mode interactive_pilot",
+            " ".join(pilot_status_steps[0].command),
+        )
+        self.assertIn(
+            "scripts/preprocess_cache_archive.py create --mode interactive_pilot --force",
+            " ".join(pilot_create_steps[0].command),
+        )
+        self.assertIn(
+            "scripts/preprocess_cache_archive.py extract --mode interactive_pilot",
+            " ".join(pilot_restore_steps[0].command),
+        )
         self.assertIn("scripts/preprocess_cache_archive.py create --mode full --force", " ".join(create_steps[0].command))
         self.assertIn(
             "scripts/preprocess_cache_archive.py create-shards --mode full --shards 150",
@@ -137,6 +167,11 @@ class ColabRunnerTests(unittest.TestCase):
         self.assertFalse(should_install_runtime_by_default("probe-candidate-diversity"))
         self.assertFalse(should_install_runtime_by_default("probe-candidate-diversity-single"))
         self.assertFalse(should_install_runtime_by_default("stage-full-womd-validation"))
+        self.assertFalse(should_install_runtime_by_default("stage-interactive-pilot-shards"))
+        self.assertFalse(should_install_runtime_by_default("interactive-pilot-preprocess-status"))
+        self.assertFalse(should_install_runtime_by_default("interactive-pilot-preprocess-archive-status"))
+        self.assertFalse(should_install_runtime_by_default("create-interactive-pilot-preprocess-archive"))
+        self.assertFalse(should_install_runtime_by_default("restore-interactive-pilot-preprocess-archive"))
         self.assertFalse(should_install_runtime_by_default("full-preprocess-repair"))
         self.assertFalse(should_install_runtime_by_default("create-full-preprocess-archive"))
         self.assertFalse(should_install_runtime_by_default("create-full-preprocess-shard-archives"))

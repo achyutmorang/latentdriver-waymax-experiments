@@ -15,6 +15,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["project"]["name"], "latentdriver-waymax-experiments")
         self.assertIn("latentdriver_t2_j3", cfg["checkpoints"])
         self.assertIn("full_reactive", cfg["evaluation"]["tiers"])
+        self.assertIn("interactive_pilot", cfg["validation"])
+        self.assertIn("interactive_pilot_reactive", cfg["evaluation"]["tiers"])
 
 
 if __name__ == "__main__":

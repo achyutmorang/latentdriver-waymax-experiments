@@ -59,6 +59,7 @@ def _validation_inputs(dataset_mode: str) -> Dict[str, str | Path]:
     cfg = load_config()
     preprocessed_root = resolve_repo_relative(cfg["assets"]["preprocessed_root"])
     smoke_root = resolve_repo_relative(cfg["assets"]["smoke_root"])
+    raw_womd_root = resolve_repo_relative(cfg["assets"]["raw_womd_root"])
     if dataset_mode == "full":
         dataset_root = waymo_dataset_root_value()
         return {
@@ -71,6 +72,12 @@ def _validation_inputs(dataset_mode: str) -> Dict[str, str | Path]:
             "waymo_path": str(smoke_root / cfg["validation"]["smoke"]["dataset_pattern"]),
             "preprocess_path": preprocessed_root / "smoke" / "val_preprocessed_path",
             "intention_path": preprocessed_root / "smoke" / "val_intention_label",
+        }
+    if dataset_mode == "interactive_pilot":
+        return {
+            "waymo_path": str(raw_womd_root / cfg["validation"]["interactive_pilot"]["dataset_pattern"]),
+            "preprocess_path": preprocessed_root / "interactive_pilot" / "val_preprocessed_path",
+            "intention_path": preprocessed_root / "interactive_pilot" / "val_intention_label",
         }
     raise ValueError(f"Unsupported dataset_mode={dataset_mode!r}")
 

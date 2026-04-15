@@ -436,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Create, inspect, or extract preprocessed cache archives.")
     parser.add_argument("action", choices=["create", "extract", "status", "create-shards", "extract-shards"])
-    parser.add_argument("--mode", default="full", choices=["full", "smoke"])
+    parser.add_argument("--mode", default="full", choices=["full", "smoke", "interactive_pilot"])
     parser.add_argument("--archive-path", type=Path)
     parser.add_argument("--archive-dir", type=Path)
     parser.add_argument("--target-root", type=Path)

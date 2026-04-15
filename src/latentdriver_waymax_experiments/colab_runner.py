@@ -30,6 +30,11 @@ NO_RUNTIME_SETUP_PROFILES = {
     "probe-candidate-diversity-single",
     "smoke-eval-reactive-modulation-heuristic-single",
     "stage-full-womd-validation",
+    "stage-interactive-pilot-shards",
+    "interactive-pilot-preprocess-status",
+    "interactive-pilot-preprocess-archive-status",
+    "create-interactive-pilot-preprocess-archive",
+    "restore-interactive-pilot-preprocess-archive",
     "create-full-preprocess-archive",
     "create-full-preprocess-shard-archives",
     "restore-full-preprocess-archive",
@@ -49,6 +54,7 @@ UPSTREAM_REQUIRED_PROFILES = {
     "probe-candidate-diversity-single",
     "smoke-eval-reactive-modulation-heuristic-single",
     "smoke-preprocess",
+    "interactive-pilot-preprocess",
     "smoke-eval-reactive",
     "smoke-eval-non-reactive",
     "full-preprocess",
@@ -87,12 +93,18 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "probe-candidate-diversity-single": "Inspect whether one configured model exposes rerankable candidate diversity in the current repo wiring.",
     "smoke-eval-reactive-modulation-heuristic-single": "Run one smoke_reactive evaluation with heuristic action modulation enabled and trace logging.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
+    "stage-interactive-pilot-shards": "Stage a fixed 10-shard dense pilot dataset from a sparse tfexample-compatible interactive source URI into the Drive-bound raw_womd cache.",
+    "interactive-pilot-preprocess-status": "Check pilot interactive preprocess artifact paths without scanning the cache recursively.",
+    "interactive-pilot-preprocess-archive-status": "Inspect whether the interactive pilot preprocessing archive exists and whether it has been restored locally.",
+    "create-interactive-pilot-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the interactive pilot preprocessing cache.",
+    "restore-interactive-pilot-preprocess-archive": "Extract the Drive-backed interactive pilot preprocessing archive into Colab local SSD.",
     "create-full-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the full preprocessing cache.",
     "create-full-preprocess-shard-archives": "Create resumable Drive-backed shard tar archives of the full preprocessing cache.",
     "restore-full-preprocess-archive": "Extract the Drive-backed full preprocessing archive into Colab local SSD.",
     "restore-full-preprocess-shard-archives": "Extract the Drive-backed full preprocessing shard archives into Colab local SSD.",
     "full-preprocess-archive-status": "Inspect whether the full preprocessing archive exists and whether it has been restored locally.",
     "smoke-preprocess": "Run the smoke validation preprocessing command.",
+    "interactive-pilot-preprocess": "Run preprocessing for the fixed 10-shard interactive pilot cache.",
     "smoke-eval-reactive": "Run all public checkpoints on smoke_reactive.",
     "smoke-eval-non-reactive": "Run all public checkpoints on smoke_non_reactive.",
     "full-preprocess-status": "Check full preprocess artifact paths without scanning the large cache directories.",
@@ -153,6 +165,23 @@ def _stage_full_womd_gcs_root() -> str:
     if configured_root and is_gcs_uri(configured_root):
         return configured_root
     return f"gs://{WOMD_VERSION}"
+
+
+def _interactive_pilot_source_uri_env_name() -> str:
+    cfg = load_config()
+    return str(cfg["validation"]["interactive_pilot"]["source_uri_env"])
+
+
+def _interactive_pilot_selected_shards_arg() -> str:
+    cfg = load_config()
+    values = [int(value) for value in cfg["validation"]["interactive_pilot"]["selected_shards"]]
+    return ",".join(str(value) for value in values)
+
+
+def _interactive_pilot_target_uri() -> str:
+    cfg = load_config()
+    raw_womd_root = resolve_repo_relative(cfg["assets"]["raw_womd_root"])
+    return str(raw_womd_root / cfg["validation"]["interactive_pilot"]["dataset_pattern"])
 
 
 def should_install_runtime_by_default(profile: str) -> bool:
@@ -277,6 +306,61 @@ def profile_steps(
                 description="Stage all 150 full validation WOMD shards into the Drive-bound raw_womd cache.",
             ),
         ]
+    if profile == "stage-interactive-pilot-shards":
+        return [
+            *steps,
+            RunnerStep(
+                name="stage_interactive_pilot_shards",
+                command=_script_command(
+                    "scripts/stage_womd_subset_shards.py",
+                    "--source-uri-env",
+                    _interactive_pilot_source_uri_env_name(),
+                    "--source-shards",
+                    _interactive_pilot_selected_shards_arg(),
+                    "--target-uri",
+                    _interactive_pilot_target_uri(),
+                ),
+                description=(
+                    "Stage the fixed 10-shard interactive pilot subset into a dense local tfexample dataset. "
+                    f"Requires {_interactive_pilot_source_uri_env_name()} to point at a tfexample-compatible @150 source URI."
+                ),
+            ),
+        ]
+    if profile == "interactive-pilot-preprocess-status":
+        return steps
+    if profile == "interactive-pilot-preprocess-archive-status":
+        return [
+            *steps,
+            RunnerStep(
+                name="interactive_pilot_preprocess_archive_status",
+                command=_script_command("scripts/preprocess_cache_archive.py", "status", "--mode", "interactive_pilot"),
+                description="Inspect interactive pilot preprocessing archive and local restore paths.",
+            ),
+        ]
+    if profile == "create-interactive-pilot-preprocess-archive":
+        return [
+            *steps,
+            RunnerStep(
+                name="create_interactive_pilot_preprocess_archive",
+                command=_script_command(
+                    "scripts/preprocess_cache_archive.py",
+                    "create",
+                    "--mode",
+                    "interactive_pilot",
+                    "--force",
+                ),
+                description="Create a persistent Drive-backed tar archive of the interactive pilot preprocessing cache.",
+            ),
+        ]
+    if profile == "restore-interactive-pilot-preprocess-archive":
+        return [
+            *steps,
+            RunnerStep(
+                name="restore_interactive_pilot_preprocess_archive",
+                command=_script_command("scripts/preprocess_cache_archive.py", "extract", "--mode", "interactive_pilot"),
+                description="Extract the persistent interactive pilot preprocessing archive into local Colab SSD.",
+            ),
+        ]
     if profile == "full-preprocess-archive-status":
         return [
             *steps,
@@ -336,6 +420,23 @@ def profile_steps(
                 name="smoke_preprocess",
                 command=_script_command("scripts/preprocess_validation_only.py", "--mode", "smoke"),
                 description="Build or reuse smoke validation preprocessing artifacts.",
+            ),
+        ]
+    if profile == "interactive-pilot-preprocess":
+        return [
+            *steps,
+            RunnerStep(
+                name="interactive_pilot_preprocess",
+                command=_script_command(
+                    "scripts/preprocess_validation_only.py",
+                    "--mode",
+                    "interactive_pilot",
+                    "--workers",
+                    1,
+                    "--jax-platform",
+                    "cpu",
+                ),
+                description="Build or reuse the fixed 10-shard interactive pilot preprocessing cache.",
             ),
         ]
     if profile == "smoke-eval-reactive":
@@ -596,6 +697,9 @@ def _dataset_status(mode: str) -> dict[str, Any]:
     elif mode == "smoke":
         smoke_root = resolve_repo_relative(cfg["assets"]["smoke_root"])
         uri = str(smoke_root / cfg["validation"]["smoke"]["dataset_pattern"])
+    elif mode == "interactive_pilot":
+        raw_womd_root = resolve_repo_relative(cfg["assets"]["raw_womd_root"])
+        uri = str(raw_womd_root / cfg["validation"]["interactive_pilot"]["dataset_pattern"])
     else:
         raise ValueError(f"Unsupported mode={mode!r}")
     try:
@@ -647,10 +751,12 @@ def collect_artifact_status() -> dict[str, Any]:
         "datasets": {
             "smoke": _dataset_status("smoke"),
             "full": _dataset_status("full"),
+            "interactive_pilot": _dataset_status("interactive_pilot"),
         },
         "preprocess": {
             "smoke": _preprocess_status("smoke"),
             "full": _preprocess_status("full"),
+            "interactive_pilot": _preprocess_status("interactive_pilot"),
         },
     }
 

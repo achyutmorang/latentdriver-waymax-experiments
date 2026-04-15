@@ -13,6 +13,7 @@
     "checkpoints_root": "artifacts/assets/checkpoints",
     "preprocessed_root": "artifacts/assets/preprocessed",
     "smoke_root": "artifacts/assets/smoke",
+    "raw_womd_root": "artifacts/assets/raw_womd",
     "lock_root": "artifacts/locks",
     "results_root": "results/runs",
     "waymo_dataset_root_env": "LATENTDRIVER_WAYMO_DATASET_ROOT"
@@ -62,6 +63,12 @@
     "smoke": {
       "dataset_pattern": "validation_smoke.tfrecord@1",
       "preprocess_batch_dims": [1, 64]
+    },
+    "interactive_pilot": {
+      "dataset_pattern": "validation_interactive_pilot/validation_interactive_tfexample.tfrecord@10",
+      "preprocess_batch_dims": [1, 64],
+      "selected_shards": [0, 15, 30, 45, 60, 75, 90, 105, 120, 135],
+      "source_uri_env": "LATENTDRIVER_INTERACTIVE_PILOT_SOURCE_URI"
     }
   },
   "evaluation": {
@@ -87,6 +94,22 @@
         "batch_dims": [1, 1],
         "seed": 0,
         "max_batches": 1,
+        "vis": false
+      },
+      "interactive_pilot_reactive": {
+        "dataset_mode": "interactive_pilot",
+        "npc_policy_type": "idm",
+        "batch_dims": [1, 125],
+        "seed": 0,
+        "max_batches": null,
+        "vis": false
+      },
+      "interactive_pilot_non_reactive": {
+        "dataset_mode": "interactive_pilot",
+        "npc_policy_type": "expert",
+        "batch_dims": [1, 125],
+        "seed": 0,
+        "max_batches": null,
         "vis": false
       },
       "full_reactive": {
