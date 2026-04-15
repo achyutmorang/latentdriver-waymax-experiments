@@ -93,7 +93,7 @@ PROFILE_DESCRIPTIONS: Mapping[str, str] = {
     "probe-candidate-diversity-single": "Inspect whether one configured model exposes rerankable candidate diversity in the current repo wiring.",
     "smoke-eval-reactive-modulation-heuristic-single": "Run one smoke_reactive evaluation with heuristic action modulation enabled and trace logging.",
     "stage-full-womd-validation": "Resumably stage all full validation WOMD TFRecord shards into the Drive-bound raw_womd cache.",
-    "stage-interactive-pilot-shards": "Stage a fixed 10-shard dense pilot dataset from a sparse tfexample-compatible interactive source URI into the Drive-bound raw_womd cache.",
+    "stage-interactive-pilot-shards": "Stage a fixed 10-shard pilot dataset from the v1.1.0 regular validation split into the Drive-bound raw_womd cache. Interactive filtering is applied post-rollout.",
     "interactive-pilot-preprocess-status": "Check pilot interactive preprocess artifact paths without scanning the cache recursively.",
     "interactive-pilot-preprocess-archive-status": "Inspect whether the interactive pilot preprocessing archive exists and whether it has been restored locally.",
     "create-interactive-pilot-preprocess-archive": "Create or rebuild a Drive-backed tar archive of the interactive pilot preprocessing cache.",
@@ -170,6 +170,11 @@ def _stage_full_womd_gcs_root() -> str:
 def _interactive_pilot_source_uri_env_name() -> str:
     cfg = load_config()
     return str(cfg["validation"]["interactive_pilot"]["source_uri_env"])
+
+
+def _interactive_pilot_default_source_uri() -> str:
+    cfg = load_config()
+    return str(cfg["validation"]["interactive_pilot"]["default_source_uri"])
 
 
 def _interactive_pilot_selected_shards_arg() -> str:
@@ -313,16 +318,16 @@ def profile_steps(
                 name="stage_interactive_pilot_shards",
                 command=_script_command(
                     "scripts/stage_womd_subset_shards.py",
-                    "--source-uri-env",
-                    _interactive_pilot_source_uri_env_name(),
+                    "--source-uri",
+                    _interactive_pilot_default_source_uri(),
                     "--source-shards",
                     _interactive_pilot_selected_shards_arg(),
                     "--target-uri",
                     _interactive_pilot_target_uri(),
                 ),
                 description=(
-                    "Stage the fixed 10-shard interactive pilot subset into a dense local tfexample dataset. "
-                    f"Requires {_interactive_pilot_source_uri_env_name()} to point at a tfexample-compatible @150 source URI."
+                    "Stage the fixed 10-shard interactive pilot subset from v1.1.0 regular validation into a dense local tfexample dataset. "
+                    "Interactive scenario filtering is applied post-rollout, not at the TFRecord level."
                 ),
             ),
         ]

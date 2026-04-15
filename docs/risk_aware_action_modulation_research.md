@@ -8,7 +8,7 @@ The target use case is the current repo setup:
 
 - frozen pretrained planners,
 - Waymax closed-loop simulation,
-- fixed 10-shard `validation_interactive` rapid-prototyping subset,
+- fixed 10-shard v1.1.0 regular validation rapid-prototyping subset (interactive scenarios identified post-rollout),
 - causal-semantic evaluation attached after rollout,
 - no retraining of the base planner.
 
@@ -612,7 +612,7 @@ Only add anisotropic scaling if scalar modulation improves safety but hurts turn
 
 ### 13.1 Core comparisons
 
-Run on the fixed 10-shard plain WOMD `validation_interactive` pilot:
+Run on the fixed 10-shard v1.1.0 regular validation pilot:
 
 1. IDM
 2. LatentDriver default
@@ -801,7 +801,7 @@ For this repo, the correct next implementation target is:
 
 1. a planner-agnostic scalar action modulator,
 2. trained or calibrated from short-horizon simulator-consistent risk labels,
-3. evaluated on the fixed 10-shard `validation_interactive` pilot,
+3. evaluated on the fixed 10-shard v1.1.0 regular validation pilot,
 4. analyzed with post-rollout causal-semantic buckets.
 
 If only one path should be built first, build:

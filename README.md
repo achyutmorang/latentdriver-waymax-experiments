@@ -61,9 +61,9 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 - [x] Full preprocess shard archive workflow is available for faster and safer Colab restores.
 - [x] Causal-semantic planner evaluation strategy is documented.
 - [ ] Verify WOMD-Reasoning `sid` overlap with CausalAgents `scenario_id`.
-- [ ] Add `validation_interactive` subset support to the evaluation contract.
+- [ ] Stage v1.1.0 regular validation shards for the interactive pilot subset.
 - [ ] Export per-scenario rollout metrics, not only aggregate metrics.
-- [ ] Run IDM vs LatentDriver on a fixed 10-shard plain WOMD `validation_interactive` rapid-prototyping subset.
+- [ ] Run IDM vs LatentDriver on a fixed 10-shard v1.1.0 regular validation rapid-prototyping subset with post-rollout interactive filtering.
 - [ ] Join completed 10-shard rollout outputs with WOMD-Reasoning and CausalAgents for post-rollout diagnostic insight.
 - [ ] Implement bucket assignment for causal-semantic diagnostics.
 - [ ] Implement `CS-SP` base score and balanced bucket aggregation.
@@ -89,7 +89,7 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `full_preprocess` | Full WOMD validation split | Not applicable | Not applicable | Build durable map, route, and intention-label caches used by all full evaluations. | Done |
 | `create-full-preprocess-shard-archives` | Completed full preprocess cache | Not applicable | Not applicable | Pack the many small Drive-backed preprocess files into 150 resumable tar parts for faster and safer Colab restores. | Done |
 | `full_eval_dry_run` | Full validation config only | Reactive by default | One selected checkpoint | Verify all paths, markers, checkpoint bindings, GCS auth, and command construction before expensive simulation. | Done |
-| `validation_interactive_pilot` | Fixed 10 interaction shards | Reactive IDM agents | IDM + LatentDriver | Run the planners on plain WOMD `validation_interactive`; keep the model input contract unchanged. | Next |
+| `validation_interactive_pilot` | Fixed 10 v1.1.0 validation shards | Reactive IDM agents | IDM + LatentDriver | Run the planners on v1.1.0 regular validation shards; identify interactive scenarios post-rollout via metadata. | Next |
 | `metadata_join_check` | WOMD-Reasoning + CausalAgents over completed pilot outputs | Not applicable | Not applicable | Verify scenario and agent ID compatibility, then attach the causal-semantic overlay after rollout. | Next |
 | `smoke_reactive_modulation_heuristic_single` | One-shard validation subset | Reactive IDM agents | One selected frozen planner | Verify the planner-agnostic runtime modulation hook, heuristic scaling, and JSONL trace export on a cheap closed-loop run. | Ready |
 | `risk_aware_modulation_heuristic` | Pilot subset | Reactive IDM agents | LatentDriver / PlanT | Test a no-training TTC plus density based action scaler on frozen planners. | Planned |
@@ -104,13 +104,13 @@ The notebook is intentionally thin. It handles Colab-specific handshakes such as
 | `plot_full_reactive` | Completed full reactive runs | Not applicable | All completed models | Generate comparable CSV, JSON, and PNG summaries from saved run bundles. | Planned |
 | `plot_full_non_reactive` | Completed full non-reactive runs | Not applicable | All completed models | Generate paired non-reactive comparison artifacts. | Planned |
 
-Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **validation-interactive pilot** is the first research diagnostic because it targets interaction-heavy scenarios. For now, that pilot is a fixed **10-shard rapid-prototyping subset** run on plain WOMD `validation_interactive`, with the causal-semantic layer attached only **after rollout** for analysis. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which helps separate ego-policy quality from feedback effects. A **risk-aware modulation run** tests whether a frozen pretrained planner can be improved by a lightweight runtime action scaler without retraining the backbone. A **candidate reranking run** is now a later, planner-specific branch rather than the main first method path. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
+Conceptually, a **smoke run** is an engineering correctness check, not a research result. A **validation-interactive pilot** is the first research diagnostic because it targets interaction-heavy scenarios. For now, that pilot is a fixed **10-shard rapid-prototyping subset** sourced from **v1.1.0 regular validation** shards, with interactive scenario filtering and the causal-semantic layer attached only **after rollout** for analysis. This approach is necessary because the LatentDriver dataloader requires the v1.1.0 TFRecord schema (`roadgraph_samples/xyz`), which is not present in newer WOMD versions where `validation_interactive` was introduced as a separate split. A **reactive run** lets surrounding agents respond through IDM, so it is closer to closed-loop interactive autonomy evaluation. A **non-reactive run** keeps surrounding traffic closer to replay/expert behavior, which helps separate ego-policy quality from feedback effects. A **risk-aware modulation run** tests whether a frozen pretrained planner can be improved by a lightweight runtime action scaler without retraining the backbone. A **candidate reranking run** is now a later, planner-specific branch rather than the main first method path. The full preprocess shard archive is an operational accelerator: it keeps the authoritative expanded artifacts on Drive but restores them into local Colab SSD from 150 resumable tar parts instead of many small random Drive reads.
 
 ## Evaluation Contract
 
 We standardize the following across models:
 
-- same validation split or smoke subset,
+- same validation split or smoke subset (interactive pilot uses v1.1.0 regular validation shards with post-rollout interactive filtering),
 - same raw planner input schema, with no WOMD-Reasoning or CausalAgents labels injected into the planner during the rapid-prototyping phase,
 - same preprocessed map/route cache,
 - same intention-label cache,
@@ -143,7 +143,7 @@ Research metrics to add:
 This repo is **frozen-planner first**. It does **not** start by training LatentDriver or PlanT. The first research milestone is:
 
 - reproduce runnable evaluation for released checkpoints,
-- capture per-scenario metrics and visualization under one standardized Waymax contract on plain WOMD `validation_interactive`,
+- capture per-scenario metrics and visualization under one standardized Waymax contract on v1.1.0 regular validation shards (with interaction-heavy scenarios identified post-rollout),
 - join completed rollout outputs with causal-semantic metadata after validation for useful diagnostic insight,
 - test no-training risk-aware action modulation on frozen planner outputs,
 - then train a lightweight learned risk head or modulator if the heuristic path shows signal,

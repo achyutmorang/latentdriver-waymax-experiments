@@ -21,7 +21,7 @@ This is narrower and more portable than immediately optimizing LatentDriver-spec
 ### Known
 
 - The repo already supports public checkpoint evaluation, smoke and full preprocessing, resumable full evaluation, and Colab runner profiles.
-- The current rapid-prototyping protocol is a fixed 10-shard plain WOMD `validation_interactive` subset.
+- The current rapid-prototyping protocol is a fixed 10-shard v1.1.0 regular validation subset with post-rollout interactive scenario filtering.
 - Causal-semantic metadata is attached after rollout, not injected into planner inputs.
 - The current repo wiring exposes a shared waypoint-delta action interface for both LatentDriver and the PlanT baseline:
   - action shape is `[dx, dy, dyaw]`

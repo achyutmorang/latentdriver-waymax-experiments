@@ -55,24 +55,25 @@ All comparisons must be paired by scenario ID.
 
 ### 4.1 Primary Split
 
-Use `validation_interactive` as the first research split.
+Use scenarios from v1.1.0 regular validation shards that correspond to interaction-heavy scenarios as the first research split.
 
 Reason:
 
-- It is interaction-heavy.
-- It is aligned with the scientific question.
-- It is better for diagnosing planner behavior than arbitrary regular validation shards.
+- The `validation_interactive` TFRecord split was introduced in WOMD v1.2.0+, which uses a different TFRecord schema incompatible with the LatentDriver dataloader (v1.1.0 `roadgraph_samples/xyz` format).
+- Instead, we stage selected shards from v1.1.0 regular validation and identify interaction-heavy scenarios post-rollout using `objects_of_interest`, WOMD-Reasoning, and CausalAgents metadata.
+- This keeps the planner input contract identical to the original LatentDriver evaluation.
 - It avoids hidden test leakage.
+- The scientific question is about interaction pressure, which is determined by metadata labels, not by which TFRecord split the data came from.
 
 ### 4.2 Dataset Scales
 
 | Stage | Data | Purpose |
 | --- | --- | --- |
-| Rapid prototyping subset | Fixed 10 `validation_interactive` shards | Default iteration loop for debugging, ablations, and early evidence |
-| Expanded subset | 20 or more `validation_interactive` shards | Stronger preliminary tables after the method stabilizes |
-| Full diagnostic | Full `validation_interactive`, then regular validation | Stronger final claim |
+| Rapid prototyping subset | Fixed 10 v1.1.0 regular validation shards | Default iteration loop for debugging, ablations, and early evidence |
+| Expanded subset | 20 or more shards | Stronger preliminary tables after the method stabilizes |
+| Full diagnostic | Full v1.1.0 validation, then regular validation | Stronger final claim |
 
-A fixed 10-shard subset is the current rapid-prototyping regime. It is useful for iteration and early evidence, but it should still not be presented as final evidence.
+A fixed 10-shard subset is the current rapid-prototyping regime. Interaction-heavy scenarios within these shards are identified using WOMD metadata post-rollout. It is useful for iteration and early evidence, but it should still not be presented as final evidence.
 
 ### 4.3 Sampling Note
 
@@ -92,7 +93,7 @@ The proposed diagnostic layer combines:
 4. Planner rollout outputs.
 
 This should be implemented as a metadata join table over WOMD scenario IDs, not as a duplicated raw dataset.
-In the current rapid-prototyping phase, this metadata is attached only after simulation or evaluation has finished. The planners still consume plain WOMD `validation_interactive` inputs plus the existing preprocess artifacts.
+In the current rapid-prototyping phase, this metadata is attached only after simulation or evaluation has finished. The planners consume plain v1.1.0 regular validation TFRecords plus the existing preprocess artifacts. Interactive scenario identification happens post-rollout.
 
 ### 5.1 Join Keys
 
@@ -380,7 +381,9 @@ The proposed method does not improve uniformly; bucketed evaluation reveals wher
 
 Goal:
 
-Run IDM and LatentDriver on a fixed 10-shard plain WOMD `validation_interactive` subset.
+Run IDM and LatentDriver on a fixed 10-shard plain v1.1.0 regular validation subset.
+
+The shards are sourced from v1.1.0 regular validation because the LatentDriver dataloader requires the v1.1.0 TFRecord schema (`roadgraph_samples/xyz`). The `validation_interactive` split introduced in WOMD v1.2.0+ uses a different schema and cannot be parsed by the existing dataloader. Interactive scenario identification is done post-rollout using WOMD metadata.
 
 Example fixed shard set:
 
@@ -393,6 +396,7 @@ Expected output:
 - Per-scenario rollout metrics
 - Run manifests keyed by `scenario_id`
 - No WOMD-Reasoning or CausalAgents labels inside the planner input path
+- Post-rollout scenario filtering by `objects_of_interest` and metadata join results
 
 ### Stage 2: Post-Rollout Metadata Join Feasibility
 
@@ -432,7 +436,7 @@ on the exact same pilot subset.
 
 Goal:
 
-Stay on the fixed 10-shard subset until the metric and method stabilize, then expand to 20 or more `validation_interactive` shards.
+Stay on the fixed 10-shard subset until the metric and method stabilize, then expand to 20 or more v1.1.0 validation shards.
 
 This is the right level for preliminary paper-style evidence and GPU cluster justification.
 
@@ -440,7 +444,7 @@ This is the right level for preliminary paper-style evidence and GPU cluster jus
 
 Goal:
 
-Run full `validation_interactive`, then regular validation if needed.
+Run full v1.1.0 validation, then regular validation if needed.
 
 Use this only after the metric, buckets, and method are frozen.
 
@@ -483,7 +487,7 @@ I am building a diagnostic closed-loop planner evaluation protocol using WOMD in
 ## 19. Immediate Next Tasks
 
 1. Verify overlap between WOMD-Reasoning `sid` and CausalAgents `scenario_id`.
-2. Add support for `validation_interactive` subset evaluation if current configs only target regular validation.
+2. Verify that the pilot evaluation config stages v1.1.0 regular validation shards and applies interactive filtering post-rollout.
 3. Export per-scenario metrics from Waymax/LatentDriver rollouts.
 4. Implement bucket assignment from metadata.
 5. Implement BaseScore and Balanced CS-SP.
@@ -512,7 +516,7 @@ If a planner avoids all collisions by never moving, the metric should expose poo
 State the research claim in one sentence:
 
 ```text
-Our method improves the safety-progress tradeoff over LatentDriver in high-causal-pressure interactive scenarios, as measured by paired bucketed CS-SP on WOMD validation_interactive.
+Our method improves the safety-progress tradeoff over LatentDriver in high-causal-pressure interactive scenarios, as measured by paired bucketed CS-SP on v1.1.0 regular validation shards with post-rollout interactive identification.
 ```
 
 If that sentence changes, the metric and experiment design should be reviewed.
@@ -549,9 +553,9 @@ The manifest should contain:
 
 ```json
 {
-  "experiment_id": "validation_interactive_pilot_v1",
-  "dataset_version": "waymo_open_dataset_motion_vX_Y_Z",
-  "split": "validation_interactive",
+  "experiment_id": "v1_1_0_validation_pilot_v1",
+  "dataset_version": "waymo_open_dataset_motion_v_1_1_0",
+  "split": "v1.1.0_validation_10_shard_subset",
   "scenario_ids_path": "artifacts/experiments/.../scenario_ids.txt",
   "planners": ["idm", "latentdriver_t2_j3", "risk_aware_latentdriver_t2_j3"],
   "simulation_mode": "reactive",
@@ -580,14 +584,14 @@ Use these roles:
 
 | Split or subset | Allowed use |
 | --- | --- |
-| `validation_interactive_proto_10_shards` | Rapid prototyping, debugging, and early evidence |
-| `validation_interactive_expanded_20_plus_shards` | Stronger preliminary method development and ablation |
-| `validation_interactive_frozen_holdout` | Final validation claim after method is fixed |
+| `v1.1.0_validation_proto_10_shards` | Rapid prototyping, debugging, and early evidence (interactive filtering post-rollout) |
+| `v1.1.0_validation_expanded_20_plus_shards` | Stronger preliminary method development and ablation |
+| `v1.1.0_validation_frozen_holdout` | Final validation claim after method is fixed |
 | `testing_interactive` | Only for official benchmark-style final evaluation, not iterative development |
 
 Do not tune the method repeatedly on the same subset used for the final claim.
 
-If data is limited, split `validation_interactive` scenario IDs into:
+If data is limited, split scenario IDs from the staged v1.1.0 validation shards into:
 
 ```text
 development subset: 70%
@@ -798,17 +802,31 @@ For each case:
 - show metric delta,
 - explain failure or improvement in one paragraph.
 
-## 35. Validation-Interactive Compatibility Check
+## 35. V1.1.0 Validation Compatibility Requirement
 
-Before committing to `validation_interactive`, verify:
+The LatentDriver dataloader (`womd_utils.py`) requires the WOMD v1.1.0 TFRecord schema, specifically the `roadgraph_samples/xyz`, `roadgraph_samples/dir`, `roadgraph_samples/id`, `roadgraph_samples/type`, and `roadgraph_samples/valid` fields.
 
-1. The current Waymax/LatentDriver dataloader can read `validation_interactive` files.
-2. Preprocessing can create map, route, and intention labels for `validation_interactive`.
-3. Scenario IDs emitted during simulation match WOMD-Reasoning `sid`.
-4. The same scenario ID can be found in CausalAgents labels.
-5. Reactive simulation works on this split without assumptions tied to regular validation.
+The `validation_interactive` split was introduced in WOMD v1.2.0+, which uses a restructured TFRecord schema where these fields are absent. Attempting to parse v1.2.0+ TFRecords with the LatentDriver dataloader causes:
 
-If any check fails, start with regular validation plus interaction buckets, then add `validation_interactive` support later.
+```text
+InvalidArgumentError: Key: roadgraph_samples/xyz.  Can't parse serialized Example.
+```
+
+Resolution:
+
+1. Stage the pilot shards from the v1.1.0 regular validation split (`gs://waymo_open_dataset_motion_v_1_1_0/uncompressed/tf_example/validation/validation_tfexample.tfrecord@150`).
+2. Run preprocessing and evaluation on these v1.1.0 TFRecords.
+3. Identify interaction-heavy scenarios **post-rollout** using `objects_of_interest`, WOMD-Reasoning, and CausalAgents metadata.
+4. Apply causal-semantic bucket analysis to the post-rollout results.
+
+This approach maintains full LatentDriver compatibility and keeps the evaluation contract unchanged.
+
+Before running the pilot, verify:
+
+1. Preprocessing can create map, route, and intention labels for the staged v1.1.0 shards.
+2. Scenario IDs emitted during simulation match WOMD-Reasoning `sid`.
+3. The same scenario ID can be found in CausalAgents labels.
+4. Reactive simulation works on the staged shards.
 
 ## 36. Scenario Bucket Construction Order
 
@@ -881,7 +899,7 @@ The planner does not see WOMD-Reasoning or CausalAgents labels.
 
 Use labels only for analysis.
 
-This is the default setting for the current fixed 10-shard `validation_interactive` rapid-prototyping benchmark.
+This is the default setting for the current fixed 10-shard v1.1.0 regular validation rapid-prototyping benchmark.
 
 This is more deployment-realistic.
 
